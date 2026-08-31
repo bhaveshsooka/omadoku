@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.bhaveshsooka.omadoku",
+  "name": "Omadoku",
+  "version": "0.1.0",
+  "author": "Bhavesh Sooka",
+  "license": "MIT",
+  "description": "Sudoku in the Omarchy bar: a keyboard-driven board, pencil marks, and a game that survives a shell restart.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omadoku",
+    "description": "A sudoku board in a bar popup. Left click opens it, right click starts a new game, middle click pauses.",
+    "category": "Games",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "difficulty": "Medium",
+      "showTimer": true,
+      "cellSize": 34,
+      "highlightPeers": true,
+      "highlightSameDigit": true,
+      "markConflicts": true,
+      "autoCleanNotes": true,
+      "pauseWhenClosed": false
+    },
+    "schema": [
+      {
+        "key": "difficulty",
+        "type": "enum",
+        "label": "Difficulty",
+        "options": [
+          "Easy",
+          "Medium",
+          "Hard",
+          "Expert"
+        ],
+        "defaultValue": "Medium",
+        "description": "Difficulty used for new games. Fewer clues, not harder logic — see the README."
+      },
+      {
+        "key": "showTimer",
+        "type": "boolean",
+        "label": "Show the timer in the bar",
+        "defaultValue": true,
+        "description": "Put the elapsed time next to the bar icon while a game is running. Vertical bars stay icon-only."
+      },
+      {
+        "key": "cellSize",
+        "type": "integer",
+        "label": "Cell size (pixels)",
+        "min": 22,
+        "max": 56,
+        "step": 2,
+        "defaultValue": 34,
+        "description": "Board cell size. The popup is nine cells wide plus padding, and is capped to fit the screen."
+      },
+      {
+        "key": "highlightPeers",
+        "type": "boolean",
+        "label": "Highlight row, column and box",
+        "defaultValue": true,
+        "description": "Shade the cells the selected cell can see."
+      },
+      {
+        "key": "highlightSameDigit",
+        "type": "boolean",
+        "label": "Highlight matching digits",
+        "defaultValue": true,
+        "description": "Shade every cell holding the same digit as the selected one."
+      },
+      {
+        "key": "markConflicts",
+        "type": "boolean",
+        "label": "Mark conflicts",
+        "defaultValue": true,
+        "description": "Colour a digit that repeats in its row, column or box. Turn off for a stricter game."
+      },
+      {
+        "key": "autoCleanNotes",
+        "type": "boolean",
+        "label": "Tidy pencil marks",
+        "defaultValue": true,
+        "description": "Placing a digit erases that pencil mark from every cell it can see."
+      },
+      {
+        "key": "pauseWhenClosed",
+        "type": "boolean",
+        "label": "Pause when the popup closes",
+        "defaultValue": false,
+        "description": "Stop the clock whenever the board is not on screen."
+      }
+    ]
+  }
+}

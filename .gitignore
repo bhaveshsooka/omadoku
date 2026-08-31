@@ -1,0 +1,4 @@
+# Local scratch, never part of the plugin
+*.log
+*.bak
+.DS_Store
