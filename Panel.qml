@@ -50,6 +50,48 @@ Panel {
   // to actually look at the board before it starts counting again.
   property bool resumeOnOpen: false
 
+  // The save file is read asynchronously, so for the first moments after the
+  // panel is built we do not yet know whether a game is waiting on disk.
+  // Anything that could deal or write a board has to wait for this, or it will
+  // happily overwrite a game in progress with a fresh one.
+  property bool saveLoaded: false
+  // An open that arrived before the save had loaded, deferred until it has.
+  property bool wantsAutoStart: false
+
+  // ------------------------------------------------------------- attract
+  //
+  // With no game in progress the board is not blank, it is a demo solving
+  // itself. Its state is kept entirely separate from the real game so there is
+  // no chance of the two being confused for one another.
+  property var demoGivens: Sudoku.emptyGrid()
+  property var demoSolution: Sudoku.emptyGrid()
+  property var demoCells: Sudoku.emptyGrid()
+  property var demoOrder: []
+  property int demoStep: 0
+  property int demoHold: 0
+
+  readonly property bool attract: !started
+
+  // The difficulty armed for the next board. Picking one only arms it; nothing
+  // is dealt until Start/New is pressed, so a stray click on "Expert" can never
+  // cost you the game you are in the middle of.
+  property string selectedDifficulty: ""
+  readonly property bool canStart: selectedDifficulty !== ""
+
+  // Which face of the panel is showing: the board, or the lifetime stats.
+  property string view: "board"
+
+  // Lifetime counters, kept in their own file beside the save.
+  property var stats: Model.emptyStats()
+  // A solve is recorded exactly once. Undo can flip `solved` back and forth and
+  // a restored save can arrive already solved, so the transition alone is not
+  // a safe trigger.
+  property bool solveRecorded: false
+
+  // "" | "new" | "abandon" - a destructive action waiting on confirmation.
+  property string pendingAction: ""
+  property string pendingDifficulty: ""
+
   // ---------------------------------------------------------------- clock
   //
   // Wall-clock based rather than tick-counted: a 1s timer that increments a
@@ -94,12 +136,25 @@ Panel {
 
   // -------------------------------------------------------------- derived
 
-  readonly property var conflictMap: root.markConflicts ? Sudoku.conflicts(root.cells) : []
+  // What the grid renders: the real game, or the demo when there is no game.
+  readonly property var boardCells: attract ? demoCells : cells
+  readonly property var boardGivens: attract ? demoGivens : puzzle
+
+  readonly property var conflictMap: root.markConflicts && !attract ? Sudoku.conflicts(root.cells) : []
   readonly property int filled: Sudoku.filledCount(root.cells)
   readonly property var digitCounts: Sudoku.digitCounts(root.cells)
   readonly property string gameState: solved ? "solved" : (paused ? "paused" : (started ? "playing" : "idle"))
   readonly property bool canUndo: undoStack.length > 0
   readonly property bool canRedo: redoStack.length > 0
+
+  // Has the player actually invested anything in this board? Dealing over an
+  // untouched grid costs nothing, so only a board with work on it is worth
+  // stopping to confirm.
+  readonly property bool hasProgress: {
+    for (var i = 0; i < 81; i++) if (cells[i] !== puzzle[i]) return true
+    return false
+  }
+  readonly property bool needsConfirm: started && !solved && hasProgress
 
   readonly property color fg: bar ? bar.foreground : Color.popups.text
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
@@ -241,8 +296,19 @@ Panel {
   }
 
   function newGame(requested) {
-    var level = Model.normalizeDifficulty(requested, root.difficultySetting)
+    // Dealing deliberately means whatever is on disk no longer matters, so the
+    // pending-load gate is satisfied from here on.
+    saveLoaded = true
+    wantsAutoStart = false
+    var level = Model.normalizeDifficulty(requested || root.selectedDifficulty, root.difficultySetting)
+    selectedDifficulty = level
+    // Walking away from a board mid-solve breaks the streak exactly as
+    // abandoning it does; dealing over a finished one does not.
+    var previousUnfinished = started && !solved
     var game = Sudoku.generate(level, Math.random)
+    stats = Model.recordStart(stats, level, previousUnfinished)
+    saveStats()
+    solveRecorded = false
     difficulty = level
     puzzle = game.puzzle
     solution = game.solution
@@ -264,14 +330,138 @@ Panel {
     saveNow()
   }
 
+  // Wipe the player's entries, keep the puzzle. Deliberately undoable rather
+  // than confirmed: one press of U puts the board back.
   function restart() {
     if (!started) return
     pushUndo()
     cells = puzzle.slice()
     notes = Sudoku.emptyNotes()
     solved = false
+    solveRecorded = false
     selected = firstEmptyCell()
     scheduleSave()
+  }
+
+  // Give up the board entirely and return to the idle state. Not undoable,
+  // which is why it routes through confirmation.
+  function abandon() {
+    if (!started) return
+    if (!solved) {
+      stats = Model.recordAbandon(stats)
+      saveStats()
+    }
+    puzzle = Sudoku.emptyGrid()
+    solution = Sudoku.emptyGrid()
+    cells = Sudoku.emptyGrid()
+    notes = Sudoku.emptyNotes()
+    undoStack = []
+    redoStack = []
+    hintsUsed = 0
+    solved = false
+    solveRecorded = false
+    paused = false
+    started = false
+    resumeOnOpen = false
+    accumulatedMs = 0
+    runningSince = 0
+    selected = 40
+    view = "board"
+    selectedDifficulty = ""
+    dealDemo()
+    // started is false now, so saveNow() would decline to write; clear the file
+    // directly instead of leaving a finished game on disk to be restored.
+    saveFile.setText("")
+  }
+
+  // Record the solve once, whichever route completed the board.
+  onSolvedChanged: {
+    if (!solved || solveRecorded || !started) return
+    solveRecorded = true
+    stats = Model.recordSolve(stats, difficulty, elapsedMs, hintsUsed)
+    saveStats()
+    scheduleSave()
+  }
+
+  // ------------------------------------------------------------- attract
+
+  function dealDemo() {
+    var game = Sudoku.generate("Easy", Math.random)
+    demoGivens = game.puzzle
+    demoSolution = game.solution
+    demoCells = game.puzzle.slice()
+    var order = []
+    for (var i = 0; i < 81; i++) if (game.puzzle[i] === 0) order.push(i)
+    // Shuffled, so it reads as someone solving rather than a cursor sweeping
+    // left to right filling in answers.
+    for (var j = order.length - 1; j > 0; j--) {
+      var k = Math.floor(Math.random() * (j + 1))
+      var t = order[j]; order[j] = order[k]; order[k] = t
+    }
+    demoOrder = order
+    demoStep = 0
+    demoHold = 0
+  }
+
+  function demoTick() {
+    if (demoStep >= demoOrder.length) {
+      // Let the finished grid sit for a moment before starting over.
+      demoHold = demoHold + 1
+      if (demoHold > 10) dealDemo()
+      return
+    }
+    var index = demoOrder[demoStep]
+    var next = demoCells.slice()
+    next[index] = demoSolution[index]
+    demoCells = next
+    demoStep = demoStep + 1
+  }
+
+  // Only animates while it is actually on screen. This runs inside the process
+  // that draws the whole desktop; an unwatched animation is pure waste.
+  Timer {
+    interval: 150
+    repeat: true
+    running: root.attract && root.opened
+    onTriggered: root.demoTick()
+  }
+
+  // ------------------------------------------------------- confirmation
+
+  function requestNewGame(level) {
+    // Nothing armed, nothing dealt. The difficulty row is the only way in.
+    if (!level && !canStart) return
+    if (needsConfirm) {
+      pendingDifficulty = Model.normalizeDifficulty(level, root.difficultySetting)
+      pendingAction = "new"
+      return
+    }
+    newGame(level)
+  }
+
+  function requestAbandon() {
+    if (!started) return
+    if (needsConfirm) { pendingAction = "abandon"; return }
+    abandon()
+  }
+
+  function confirmPending() {
+    var action = pendingAction
+    var level = pendingDifficulty
+    cancelPending()
+    if (action === "new") newGame(level)
+    else if (action === "abandon") abandon()
+  }
+
+  function cancelPending() {
+    pendingAction = ""
+    pendingDifficulty = ""
+  }
+
+  function confirmPrompt() {
+    if (pendingAction === "abandon") return "Abandon this game?"
+    if (pendingAction === "new") return "Start a new " + pendingDifficulty.toLowerCase() + " game?"
+    return ""
   }
 
   function togglePause() {
@@ -287,6 +477,27 @@ Panel {
   }
 
   function handleTextKey(text) {
+    // While a confirmation is up, Y and N answer it and nothing else lands on
+    // the board. Enter and Esc are handled by the key catcher's own signals.
+    if (pendingAction !== "") {
+      if (text === "y" || text === "Y") confirmPending()
+      else if (text === "n" || text === "N") cancelPending()
+      return
+    }
+    // Idle: the only decision to make is which board to deal, so 1-4 arm a
+    // difficulty rather than writing into a demo that is not yours.
+    if (!started) {
+      if (text >= "1" && text <= "4") selectedDifficulty = Model.LEVELS[parseInt(text, 10) - 1]
+      else if (text === "g" || text === "G") requestNewGame(selectedDifficulty)
+      else if (text === "s" || text === "S") view = "stats"
+      return
+    }
+    // The stats view has no cells, so digits would be meaningless there.
+    if (view === "stats") {
+      if (text === "s" || text === "S" || text === "b" || text === "B") view = "board"
+      else if (text === "g" || text === "G") requestNewGame(selectedDifficulty)
+      return
+    }
     if (text >= "1" && text <= "9") {
       var digit = parseInt(text, 10)
       if (notesMode) toggleNoteAt(selected, digit)
@@ -303,9 +514,11 @@ Panel {
       case "n": case "N": notesMode = !notesMode; break
       case "u": case "U": undo(); break
       case "r": case "R": redo(); break
-      case "g": case "G": newGame(difficulty); break
+      case "g": case "G": requestNewGame(selectedDifficulty); break
       case "a": case "A": fillNotes(); break
       case "p": case "P": togglePause(); break
+      case "c": case "C": restart(); break
+      case "s": case "S": view = "stats"; break
       case "?": hint(); break
     }
   }
@@ -314,8 +527,12 @@ Panel {
 
   readonly property string stateDir: Quickshell.env("HOME") + "/.local/state/omadoku/"
   readonly property string savePath: stateDir + "game.json"
+  readonly property string statsPath: stateDir + "stats.json"
 
   function saveNow() {
+    // Never write before reading: a save issued in the gap between construction
+    // and the file landing would clobber the very game we are about to restore.
+    if (!saveLoaded) return
     if (!started) return
     saveFile.setText(Model.serialize({
       difficulty: root.difficulty,
@@ -332,10 +549,21 @@ Panel {
   }
 
   function scheduleSave() { saveTimer.restart() }
+  function saveStats() { statsSaveTimer.restart() }
 
   function loadSave(text) {
     var saved = Model.parse(text)
-    if (!saved) return
+    if (!saved) {
+      // Nothing usable on disk. The gate opens either way, and an open that
+      // arrived while we were reading gets its game now.
+      // Nothing to restore: sit in attract mode until a difficulty is picked.
+      saveLoaded = true
+      wantsAutoStart = false
+      dealDemo()
+      return
+    }
+    saveLoaded = true
+    wantsAutoStart = false
     difficulty = saved.difficulty
     puzzle = saved.puzzle
     solution = saved.solution
@@ -346,10 +574,13 @@ Panel {
     hintsUsed = saved.hintsUsed
     selected = saved.selected
     notesMode = saved.notesMode
+    selectedDifficulty = saved.difficulty
     undoStack = []
     redoStack = []
     started = true
     solved = Sudoku.isComplete(saved.cells)
+    // Whatever solved this board recorded it at the time; do not count it twice.
+    solveRecorded = solved
     // Hold the clock until the board is actually on screen again.
     paused = !solved
     resumeOnOpen = !solved
@@ -360,6 +591,24 @@ Panel {
     interval: 400
     repeat: false
     onTriggered: root.saveNow()
+  }
+
+  Timer {
+    id: statsSaveTimer
+    interval: 400
+    repeat: false
+    onTriggered: statsFile.setText(Model.serializeStats(root.stats))
+  }
+
+  FileView {
+    id: statsFile
+    path: root.statsPath
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.stats = Model.parseStats(text())
+    // No file yet on first run; parseStats("") is the empty ledger.
+    onLoadFailed: root.stats = Model.parseStats("")
   }
 
   Process {
@@ -382,16 +631,25 @@ Panel {
 
   Component.onCompleted: {
     ensureDirProc.running = true
-    Qt.callLater(function() { saveFile.reload() })
+    Qt.callLater(function() {
+      saveFile.reload()
+      statsFile.reload()
+    })
   }
 
   onOpenedChanged: {
     if (opened) {
-      if (!started) {
-        newGame(root.difficultySetting)
-      } else if (resumeOnOpen || (pauseWhenClosed && paused)) {
-        resumeOnOpen = false
-        paused = false
+      if (started) {
+        // Reopening always lands back on the game in progress, whatever tab was
+        // left showing. Opening never deals a board - only a difficulty does.
+        view = "board"
+        cancelPending()
+        if (resumeOnOpen || (pauseWhenClosed && paused)) {
+          resumeOnOpen = false
+          paused = false
+        }
+      } else if (demoOrder.length === 0) {
+        dealDemo()
       }
     } else {
       if (pauseWhenClosed && started && !solved) paused = true
@@ -417,13 +675,23 @@ Panel {
       anchors.fill: parent
 
       onMoveRequested: function(dx, dy) { root.moveCursor(dx, dy) }
-      onDeleteRequested: root.clearCell(root.selected)
-      onCloseRequested: root.close()
+      onDeleteRequested: if (root.pendingAction === "" && root.view === "board") root.clearCell(root.selected)
+      // Esc backs out of a confirmation first, then out of the stats view, and
+      // only closes the panel when there is nothing left to back out of.
+      onCloseRequested: {
+        if (root.pendingAction !== "") root.cancelPending()
+        else if (root.view !== "board") root.view = "board"
+        else root.close()
+      }
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(text) { root.handleTextKey(text) }
       // Space is the one key the catcher claims that a sudoku board wants back:
       // toggling pencil marks is the most frequent mode switch there is.
-      onActivateRequested: root.notesMode = !root.notesMode
+      onActivateRequested: {
+        if (root.pendingAction !== "") root.confirmPending()
+        else if (root.attract) root.requestNewGame(root.selectedDifficulty)
+        else if (root.view === "board") root.notesMode = !root.notesMode
+      }
 
       Column {
         id: column
@@ -457,7 +725,7 @@ Panel {
 
             Text {
               textFormat: Text.PlainText
-              text: root.difficulty.toUpperCase() + " · " + Model.statusText({
+              text: (root.attract ? "" : root.difficulty.toUpperCase() + " · ") + Model.statusText({
                 state: root.gameState,
                 filled: root.filled,
                 notesMode: root.notesMode,
@@ -475,6 +743,7 @@ Panel {
 
           Text {
             id: clockLabel
+            visible: !root.attract
             textFormat: Text.PlainText
             text: Model.formatTime(root.elapsedMs)
             color: root.fg
@@ -489,9 +758,51 @@ Panel {
           }
         }
 
+        // ---------- tabs ----------
+        Row {
+          id: tabRow
+          width: parent.width
+          spacing: Style.space(6)
+
+          readonly property real cellWidth: (width - spacing) / 2
+
+          Button {
+            width: tabRow.cellWidth
+            iconText: "󰋁"
+            iconSize: Style.font.body
+            text: "Board"
+            fontSize: Style.font.bodySmall
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            horizontalPadding: Style.space(2)
+            verticalPadding: Style.spacing.controlPaddingY
+            bordered: true
+            active: root.view === "board"
+            tooltipText: "The board (B)"
+            onClicked: root.view = "board"
+          }
+
+          Button {
+            width: tabRow.cellWidth
+            iconText: "󰄨"
+            iconSize: Style.font.body
+            text: "Stats"
+            fontSize: Style.font.bodySmall
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            horizontalPadding: Style.space(2)
+            verticalPadding: Style.spacing.controlPaddingY
+            bordered: true
+            active: root.view === "stats"
+            tooltipText: "Your record (S)"
+            onClicked: root.view = "stats"
+          }
+        }
+
         // ---------- difficulty ----------
         Row {
           id: difficultyRow
+          visible: root.view === "board" && root.pendingAction === ""
           width: parent.width
           spacing: Style.space(6)
 
@@ -510,9 +821,10 @@ Panel {
               horizontalPadding: Style.space(2)
               verticalPadding: Style.spacing.controlPaddingY
               bordered: true
-              active: root.difficulty === modelData
-              tooltipText: "New " + String(modelData).toLowerCase() + " game"
-              onClicked: root.newGame(modelData)
+              active: root.selectedDifficulty === modelData
+              tooltipText: "Choose " + String(modelData).toLowerCase()
+                + (root.attract ? ", then press Start" : ", then press New")
+              onClicked: root.selectedDifficulty = modelData
             }
           }
         }
@@ -520,6 +832,7 @@ Panel {
         // ---------- the board ----------
         Item {
           id: boardHolder
+          visible: root.view === "board"
           width: parent.width
           implicitHeight: root.boardSize
 
@@ -528,6 +841,11 @@ Panel {
             anchors.horizontalCenter: parent.horizontalCenter
             width: root.boardSize
             height: root.boardSize
+            // The demo is scenery, not the subject: it sits behind the
+            // difficulty buttons rather than competing with them.
+            opacity: root.attract ? 0.5 : 1.0
+
+            Behavior on opacity { NumberAnimation { duration: 220 } }
 
             Repeater {
               model: 81
@@ -536,15 +854,15 @@ Panel {
                 id: cellItem
                 required property int index
 
-                readonly property int value: root.cells[index]
-                readonly property int noteMask: root.notes[index]
-                readonly property bool given: root.puzzle[index] !== 0
-                readonly property bool isSelected: root.selected === index
-                readonly property bool isPeer: root.highlightPeers && !isSelected
+                readonly property int value: root.boardCells[index]
+                readonly property int noteMask: root.attract ? 0 : root.notes[index]
+                readonly property bool given: root.boardGivens[index] !== 0
+                readonly property bool isSelected: !root.attract && root.selected === index
+                readonly property bool isPeer: !root.attract && root.highlightPeers && !isSelected
                   && (Sudoku.rowOf(index) === Sudoku.rowOf(root.selected)
                       || Sudoku.colOf(index) === Sudoku.colOf(root.selected)
                       || Sudoku.boxOf(index) === Sudoku.boxOf(root.selected))
-                readonly property bool isSameDigit: root.highlightSameDigit && !isSelected
+                readonly property bool isSameDigit: !root.attract && root.highlightSameDigit && !isSelected
                   && value !== 0 && value === root.cells[root.selected]
                 readonly property bool isConflict: root.conflictMap.length === 81 && root.conflictMap[index]
 
@@ -576,6 +894,12 @@ Panel {
                   opacity: cellItem.given ? 1.0 : 0.82
                   font.family: root.fontFamily
                   font.pixelSize: Math.round(root.cell * 0.56)
+
+                  // Each demo digit arrives rather than blinking into place.
+                  Behavior on opacity {
+                    enabled: root.attract
+                    NumberAnimation { duration: 180 }
+                  }
                 }
 
                 // Pencil marks, laid out where the digit itself would sit.
@@ -606,6 +930,7 @@ Panel {
 
                 MouseArea {
                   anchors.fill: parent
+                  enabled: !root.attract
                   acceptedButtons: Qt.LeftButton | Qt.RightButton
                   cursorShape: Qt.PointingHandCursor
                   onClicked: function(mouse) {
@@ -719,9 +1044,33 @@ Panel {
           }
         }
 
+        // ---------- start (idle only) ----------
+        //
+        // The one action available with no game on the table. Disabled until a
+        // difficulty is armed, so the empty state asks a question and waits for
+        // the answer rather than guessing one.
+        Button {
+          visible: root.attract && root.view === "board" && root.pendingAction === ""
+          width: parent.width
+          iconText: "󰐊"
+          iconSize: Style.font.body
+          text: root.canStart ? "Start " + root.selectedDifficulty.toLowerCase() + " game" : "Choose a difficulty"
+          fontSize: Style.font.bodySmall
+          foreground: root.fg
+          fontFamily: root.fontFamily
+          horizontalPadding: Style.space(2)
+          verticalPadding: Style.spacing.controlPaddingY
+          bordered: true
+          active: root.canStart
+          opacity: root.canStart ? 1.0 : 0.4
+          tooltipText: root.canStart ? "Deal the board (Enter)" : "Pick a difficulty above, or press 1-4"
+          onClicked: root.requestNewGame(root.selectedDifficulty)
+        }
+
         // ---------- digit pad ----------
         Row {
           id: padRow
+          visible: root.view === "board" && root.pendingAction === "" && !root.attract
           width: parent.width
           spacing: Style.space(4)
 
@@ -767,13 +1116,126 @@ Panel {
           }
         }
 
-        // ---------- actions ----------
+        // ---------- stats ----------
+        //
+        // Lifetime record. Everything here is derived from the two counters the
+        // game already keeps (a start, and a solve with its time and hints), so
+        // there is no separate history file to drift out of sync with the save.
+        Column {
+          id: statsColumn
+          visible: root.view === "stats"
+          width: parent.width
+          spacing: Style.space(14)
+
+          // ----- headline: solves, win rate, streak -----
+          Row {
+            width: parent.width
+            spacing: Style.space(10)
+
+            readonly property real cellWidth: (width - spacing * 2) / 3
+
+            HeadlineStat {
+              width: parent.cellWidth
+              value: String(root.stats.solved)
+              label: "SOLVED"
+            }
+
+            HeadlineStat {
+              width: parent.cellWidth
+              value: root.stats.started > 0 ? Model.winRate(root.stats) + "%" : "—"
+              label: "WIN RATE"
+            }
+
+            HeadlineStat {
+              width: parent.cellWidth
+              value: String(root.stats.streak)
+              label: "STREAK"
+            }
+          }
+
+          PanelSeparator { foreground: root.fg }
+
+          // ----- per-difficulty table -----
+          Column {
+            width: parent.width
+            spacing: Style.space(6)
+
+            PanelSectionHeader {
+              text: "BY DIFFICULTY"
+              foreground: root.fg
+              fontFamily: root.fontFamily
+            }
+
+            StatsRow {
+              level: ""
+              solved: "WON"
+              best: "BEST"
+              average: "AVG"
+              header: true
+            }
+
+            Repeater {
+              model: Model.statsRows(root.stats)
+
+              StatsRow {
+                required property var modelData
+                level: modelData.level
+                solved: modelData.solved
+                best: modelData.best
+                average: modelData.average
+              }
+            }
+          }
+
+          PanelSeparator { foreground: root.fg }
+
+          // ----- totals -----
+          Column {
+            width: parent.width
+            spacing: Style.spacing.labelGap
+
+            TotalPair {
+              label: "Games played"
+              value: String(root.stats.started)
+            }
+            TotalPair {
+              label: "Solved without hints"
+              value: String(root.stats.cleanSolved)
+            }
+            TotalPair {
+              label: "Best streak"
+              value: String(root.stats.bestStreak)
+            }
+            TotalPair {
+              label: "Hints used"
+              value: String(root.stats.hints)
+            }
+            TotalPair {
+              label: "Time on solved games"
+              value: Model.formatTotalTime(root.stats.timeMs)
+            }
+          }
+
+          Text {
+            visible: root.stats.started === 0
+            width: parent.width
+            textFormat: Text.PlainText
+            text: "No games finished yet. Solve a board and it lands here."
+            color: Qt.darker(root.fg, 1.4)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+        }
+
+        // ---------- actions: play ----------
         Row {
           id: actionRow
+          visible: root.view === "board" && root.pendingAction === "" && !root.attract
           width: parent.width
           spacing: Style.space(6)
 
-          readonly property real cellWidth: (width - spacing * 4) / 5
+          readonly property real cellWidth: (width - spacing * 3) / 4
 
           Button {
             width: actionRow.cellWidth
@@ -839,9 +1301,40 @@ Panel {
             tooltipText: "Pause the clock (P)"
             onClicked: root.togglePause()
           }
+        }
+
+        // ---------- actions: the game itself ----------
+        //
+        // Split from the row above because these three change *which* game you
+        // are playing rather than how you are playing it, and two of them throw
+        // work away. Seven buttons on one row would also leave no room to label
+        // them, which is exactly the wrong economy for destructive actions.
+        Row {
+          id: gameRow
+          visible: root.view === "board" && root.pendingAction === "" && !root.attract
+          width: parent.width
+          spacing: Style.space(6)
+
+          readonly property real cellWidth: (width - spacing * 2) / 3
 
           Button {
-            width: actionRow.cellWidth
+            width: gameRow.cellWidth
+            iconText: "󰇾"
+            iconSize: Style.font.body
+            text: "Clear"
+            fontSize: Style.font.caption
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            horizontalPadding: Style.space(2)
+            verticalPadding: Style.spacing.controlPaddingY
+            bordered: true
+            opacity: root.started && root.hasProgress ? 1.0 : 0.4
+            tooltipText: "Clear your entries, keep the puzzle (C) - undoable"
+            onClicked: root.restart()
+          }
+
+          Button {
+            width: gameRow.cellWidth
             iconText: "󰑐"
             iconSize: Style.font.body
             text: "New"
@@ -851,11 +1344,221 @@ Panel {
             horizontalPadding: Style.space(2)
             verticalPadding: Style.spacing.controlPaddingY
             bordered: true
-            tooltipText: "New " + root.difficulty.toLowerCase() + " game (G)"
-            onClicked: root.newGame(root.difficulty)
+            opacity: root.canStart ? 1.0 : 0.4
+            tooltipText: root.canStart
+              ? "New " + root.selectedDifficulty.toLowerCase() + " game (G)"
+              : "Choose a difficulty first"
+            onClicked: root.requestNewGame(root.selectedDifficulty)
+          }
+
+          Button {
+            width: gameRow.cellWidth
+            iconText: "󰗼"
+            iconSize: Style.font.body
+            text: "Abandon"
+            fontSize: Style.font.caption
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            horizontalPadding: Style.space(2)
+            verticalPadding: Style.spacing.controlPaddingY
+            bordered: true
+            opacity: root.started ? 1.0 : 0.4
+            tooltipText: "Give up this board and clear it"
+            onClicked: root.requestAbandon()
+          }
+        }
+
+        // ---------- confirmation ----------
+        //
+        // Takes the place of the action rows rather than floating over them, so
+        // the destructive button cannot be clicked again by muscle memory while
+        // the question is on screen.
+        Column {
+          visible: root.pendingAction !== ""
+          width: parent.width
+          spacing: Style.space(8)
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.confirmPrompt()
+            color: root.fg
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.subtitle
+            font.bold: true
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.pendingAction === "abandon"
+              ? "This board and its time are lost, and the streak resets."
+              : "The current board is lost, and the streak resets."
+            color: Qt.darker(root.fg, 1.4)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+
+          Row {
+            id: confirmRow
+            width: parent.width
+            spacing: Style.space(6)
+
+            readonly property real cellWidth: (width - spacing) / 2
+
+            Button {
+              width: confirmRow.cellWidth
+              text: "Keep playing"
+              fontSize: Style.font.bodySmall
+              foreground: root.fg
+              fontFamily: root.fontFamily
+              horizontalPadding: Style.space(2)
+              verticalPadding: Style.spacing.controlPaddingY
+              bordered: true
+              tooltipText: "Esc or N"
+              onClicked: root.cancelPending()
+            }
+
+            Button {
+              width: confirmRow.cellWidth
+              text: root.pendingAction === "abandon" ? "Abandon" : "New game"
+              fontSize: Style.font.bodySmall
+              foreground: root.bar ? root.bar.urgent : Color.urgent
+              fontFamily: root.fontFamily
+              horizontalPadding: Style.space(2)
+              verticalPadding: Style.spacing.controlPaddingY
+              bordered: true
+              tooltipText: "Enter or Y"
+              onClicked: root.confirmPending()
+            }
           }
         }
       }
+    }
+  }
+
+  // ---------------------------------------------------------- stats pieces
+
+  component HeadlineStat: Column {
+    property string value: ""
+    property string label: ""
+
+    spacing: Style.space(2)
+
+    Text {
+      textFormat: Text.PlainText
+      text: parent.value
+      color: root.fg
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.display
+      font.bold: true
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      text: parent.label
+      color: Qt.darker(root.fg, 1.4)
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      font.bold: true
+      font.letterSpacing: 1.2
+    }
+  }
+
+  // One line of the difficulty table. The three number columns are fixed
+  // fractions rather than laid out by content, so the digits line up down the
+  // table instead of drifting with the width of each value.
+  component StatsRow: Item {
+    property string level: ""
+    property string solved: ""
+    property string best: ""
+    property string average: ""
+    property bool header: false
+
+    width: parent.width
+    implicitHeight: levelLabel.implicitHeight
+
+    Text {
+      id: levelLabel
+      anchors.left: parent.left
+      width: parent.width * 0.34
+      textFormat: Text.PlainText
+      text: parent.level
+      color: root.fg
+      opacity: parent.header ? 0.6 : 1.0
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+      elide: Text.ElideRight
+    }
+
+    Text {
+      anchors.left: parent.left
+      anchors.leftMargin: parent.width * 0.34
+      width: parent.width * 0.20
+      horizontalAlignment: Text.AlignRight
+      textFormat: Text.PlainText
+      text: parent.solved
+      color: root.fg
+      opacity: parent.header ? 0.6 : 1.0
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+
+    Text {
+      anchors.left: parent.left
+      anchors.leftMargin: parent.width * 0.56
+      width: parent.width * 0.22
+      horizontalAlignment: Text.AlignRight
+      textFormat: Text.PlainText
+      text: parent.best
+      color: root.fg
+      opacity: parent.header ? 0.6 : 1.0
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+
+    Text {
+      anchors.right: parent.right
+      width: parent.width * 0.22
+      horizontalAlignment: Text.AlignRight
+      textFormat: Text.PlainText
+      text: parent.average
+      color: root.fg
+      opacity: parent.header ? 0.6 : 1.0
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+  }
+
+  component TotalPair: Row {
+    property string label: ""
+    property string value: ""
+
+    width: parent.width
+    spacing: Style.space(8)
+
+    Text {
+      textFormat: Text.PlainText
+      text: parent.label
+      color: root.fg
+      opacity: 0.6
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+
+    Item {
+      width: Math.max(0, parent.width - parent.children[0].implicitWidth - parent.children[2].implicitWidth - parent.spacing * 2)
+      height: 1
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      text: parent.value
+      color: root.fg
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
     }
   }
 }

@@ -28,6 +28,11 @@ BarWidget {
   readonly property int filled: panel ? panel.filled : 0
   readonly property int hintsUsed: panel ? panel.hintsUsed : 0
   readonly property bool showTimer: setting("showTimer", true) === true
+  readonly property bool canStart: panel ? panel.canStart === true : false
+  // A 58px wordmark cannot fit a 28px vertical bar, so that orientation keeps
+  // the compact grid glyph. Also lets anyone opt back into the plain icon.
+  readonly property string barStyle: setting("barStyle", "Wordmark")
+  readonly property bool wordmark: !vertical && barStyle !== "Icon"
 
   // Popout switching is the bar's one-popup-at-a-time coordination; forward it
   // so opening another widget's popup closes the board cleanly.
@@ -47,10 +52,36 @@ BarWidget {
   function togglePanel() { if (panel) panel.toggle() }
   function closeForPopoutSwitch() { if (panel) panel.closeForPopoutSwitch() }
 
-  function newGame(difficulty) {
+  // Dealing over a board with work on it asks first. When the popup is shut,
+  // that means opening it onto the question rather than silently doing nothing
+  // or silently destroying the game.
+  function requestNewGame(difficulty) {
     if (!panel) return "unavailable"
+    // Nothing armed: open the panel so a difficulty can be picked, rather than
+    // failing silently at a bar icon with no way to explain itself.
+    if (!difficulty && !panel.canStart) {
+      panel.open()
+      return "choose a difficulty"
+    }
+    if (panel.needsConfirm) {
+      panel.requestNewGame(difficulty)
+      panel.open()
+      return "confirm"
+    }
     panel.newGame(difficulty)
     return panel.difficulty
+  }
+
+  function requestAbandon() {
+    if (!panel) return "unavailable"
+    if (!panel.started) return "no game"
+    if (panel.needsConfirm) {
+      panel.requestAbandon()
+      panel.open()
+      return "confirm"
+    }
+    panel.abandon()
+    return "ok"
   }
 
   implicitWidth: button.implicitWidth
@@ -95,7 +126,20 @@ BarWidget {
     // name falls back to the configured difficulty rather than erroring, so a
     // keybinding with a typo still deals a playable game. (`new` is a reserved
     // word, so the method cannot simply be called that.)
-    function newGame(difficulty: string): string { return root.newGame(difficulty) }
+    function newGame(difficulty: string): string { return root.requestNewGame(difficulty) }
+    // Clearing keeps the puzzle and is undoable, so it needs no confirmation.
+    function clear(): string {
+      if (!root.panel) return "unavailable"
+      root.panel.restart()
+      return "ok"
+    }
+    function abandon(): string { return root.requestAbandon() }
+    function stats(): string {
+      if (!root.panel) return "unavailable"
+      var s = root.panel.stats
+      return s.solved + "/" + s.started + " solved, " + Model.winRate(s)
+        + "% win rate, streak " + s.streak + " (best " + s.bestStreak + ")"
+    }
     function pause(): string {
       if (!root.panel) return "unavailable"
       root.panel.togglePause()
@@ -118,22 +162,18 @@ BarWidget {
     }
   }
 
-  BarIconButton {
+  WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
 
-    text: Model.barLabel({
-      state: root.gameState,
-      showTimer: root.showTimer,
-      vertical: root.vertical,
-      started: root.started,
-      elapsedMs: root.elapsedMs
-    })
-
-    // The timer label paints a text block wider than a bare icon, so widen the
-    // slot to match rather than letting the digits crowd the neighbours.
-    slotSize: Style.bar.iconSlot * (root.showTimer && root.started && !root.vertical ? 2 : 1)
+    // Vertical bars fall back to WidgetButton's own label, carrying the glyph.
+    labelVisible: !root.wordmark
+    text: root.wordmark ? "" : Model.glyph(root.gameState)
+    hasVisualContent: true
+    fontSize: Style.bar.iconFont
+    fixedWidth: root.wordmark ? Math.round(content.implicitWidth + Style.spaceReal(9)) : (root.vertical ? -1 : Style.bar.iconSlot)
+    fixedHeight: root.vertical ? Style.bar.iconSlot : -1
 
     // A finished board is worth a colour change; a game in progress is not,
     // since the bar should not nag while you think.
@@ -150,9 +190,38 @@ BarWidget {
     })
 
     onPressed: function(pressedButton) {
-      if (pressedButton === Qt.RightButton) root.newGame(root.difficulty)
-      else if (pressedButton === Qt.MiddleButton && root.panel) root.panel.togglePause()
-      else root.togglePanel()
+      // Middle click does nothing on purpose, and neither does right click deal
+      // a board any more: dealing from the bar put a destructive action one slip
+      // away, in the one place the confirmation prompt cannot be seen.
+      if (pressedButton === Qt.RightButton && root.panel) root.panel.togglePause()
+      else if (pressedButton === Qt.LeftButton) root.togglePanel()
+    }
+
+    Row {
+      id: content
+      visible: root.wordmark
+      anchors.centerIn: parent
+      spacing: Style.spaceReal(6)
+
+      Icon {
+        anchors.verticalCenter: parent.verticalCenter
+        barSize: root.barSize
+        fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+        // Track the button's own colour so solved and paused states carry
+        // through to the wordmark rather than only to the timer beside it.
+        foreground: button.active && button.useActiveColor ? button.activeColor : button.foreground
+      }
+
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        visible: root.showTimer && root.started
+        textFormat: Text.PlainText
+        text: Model.formatTime(root.elapsedMs)
+        color: button.active && button.useActiveColor ? button.activeColor : button.foreground
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.bar.iconFont
+        renderType: Text.NativeRendering
+      }
     }
   }
 }

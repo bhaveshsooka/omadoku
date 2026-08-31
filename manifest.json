@@ -26,7 +26,8 @@
       "highlightSameDigit": true,
       "markConflicts": true,
       "autoCleanNotes": true,
-      "pauseWhenClosed": false
+      "pauseWhenClosed": false,
+      "barStyle": "Wordmark"
     },
     "schema": [
       {
@@ -41,6 +42,17 @@
         ],
         "defaultValue": "Medium",
         "description": "Difficulty used for new games. Fewer clues, not harder logic — see the README."
+      },
+      {
+        "key": "barStyle",
+        "type": "enum",
+        "label": "Bar appearance",
+        "options": [
+          "Wordmark",
+          "Icon"
+        ],
+        "defaultValue": "Wordmark",
+        "description": "Wordmark draws OMADOKU as a row of sudoku cells. Icon uses the compact grid glyph. Vertical bars always use the icon."
       },
       {
         "key": "showTimer",
