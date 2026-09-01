@@ -56,35 +56,6 @@ deletes the plugin directory, and rescans. The save and stats are the only thing
 Omadoku leaves behind, and the `rm` above is all it takes to clear them. Nothing
 else on your system is touched.
 
-To move the widget afterwards:
-
-```bash
-omarchy bar move io.github.bhaveshsooka.omadoku --section right
-```
-
-<details>
-<summary>Installing by hand, or recovering when the shell will not start</summary>
-
-Without `plugin add`:
-
-```bash
-git clone https://github.com/bhaveshsooka/omadoku.git \
-  ~/.config/omarchy/plugins/io.github.bhaveshsooka.omadoku
-
-omarchy-shell shell rescanPlugins
-omarchy plugin enable io.github.bhaveshsooka.omadoku
-```
-
-The directory name must match the manifest id.
-
-`plugin remove` talks to a running shell over IPC, so if the shell will not
-start it cannot help. Remove the plugin by hand instead: delete
-`~/.config/omarchy/plugins/io.github.bhaveshsooka.omadoku/`, drop the
-`io.github.bhaveshsooka.omadoku` entry from `bar.layout` in
-`~/.config/omarchy/shell.json`, then run `omarchy restart shell`.
-
-</details>
-
 ## What Omadoku writes
 
 It owns two files, both under `XDG_STATE_HOME`, both created on first run:
