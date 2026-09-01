@@ -114,6 +114,10 @@ click to clear it.
 
 On a confirmation prompt, `y` or `Enter` confirms and `n` or `Esc` cancels.
 
+A finished board stops taking input: undo, redo, clear, abandon and the pencil
+mark toggle are all disabled, and **New** is the way on. See
+[Winning](#winning).
+
 Typing the digit that is already in a cell clears it, which is what every other
 sudoku does.
 
@@ -122,12 +126,32 @@ in themes where the accent colour equals the foreground. A digit that repeats in
 its row, column, or box turns the theme's urgent colour — turn that off in the
 settings for a stricter game.
 
+## Winning
+
+Fill the last cell and the board takes itself apart: every digit bursts into
+confetti in a random order, the grid empties, and a message lands on the bare
+board with the difficulty and your time. It holds for five seconds, then the
+finished board comes back. Any key or a click cuts it short — the key still does
+whatever you pressed it for.
+
+Solve with the popup closed and the parade waits until you next open it, rather
+than playing to an empty room. A game restored from disk that was already
+finished does not replay it.
+
+In the bar, a solved board fills the wordmark's cells and brightens its edge.
+That is a fill rather than a colour change on purpose: the shell palette has an
+urgent colour and no success one, and in some themes the accent colour is the
+same value as the foreground, so a recoloured win would be no visible win at
+all.
+
 ## Stopping, clearing, abandoning
 
 **Pause** stops the clock and drops a curtain over the grid — it hides the board
 rather than dimming it, so you cannot keep solving by eye. Pause from the `p`
 key, the Pause button, a right click on the bar icon, or IPC. Set
-`pauseWhenClosed` to pause automatically whenever the board is off screen.
+`pauseWhenClosed` to pause automatically whenever the board is off screen. A
+curtained board takes no input, so Hint and the pencil mark toggle are disabled
+until you resume.
 
 Three ways to stop a game, in increasing order of loss:
 
@@ -141,6 +165,10 @@ Clear is undoable, so it just does it. New and Abandon ask first — but only wh
 there is something to lose: dealing over an untouched board skips the prompt.
 The question is always asked in the panel, where you can see it — which is why
 neither can be triggered from the bar icon.
+
+Clear and Abandon apply to a game in progress, so both are disabled once a board
+is solved — there is nothing left to clear and nothing left to give up on. New
+is the only way off a finished board.
 
 Abandon returns to the idle state — no board, no clock, the bar icon back to
 "click to start", and the difficulty selection cleared, so the widget is asking
@@ -157,8 +185,9 @@ The **Stats** tab (`s`) keeps a lifetime record in
   solved games
 
 A streak is consecutive solves; abandoning a board, or dealing a new one over a
-board you had not finished, resets it to zero. A solve counts once no matter
-how you got there — undoing past the finish and re-solving does not count twice.
+board you had not finished, resets it to zero. A solve counts once per board
+dealt: a finished board cannot be un-finished, since undo and clear are both
+disabled on it, so there is no way to score the same deal twice.
 
 Stats are derived entirely from two events the game already knows about — a
 board dealt, and a board solved with its time and hint count — so there is no
@@ -202,6 +231,10 @@ return `confirm` and open the panel onto the prompt rather than acting. `clear`
 is undoable and acts immediately. Calling `newGame` with no argument and nothing
 armed opens the panel to ask, rather than failing silently at a bar icon that
 has no way to explain itself.
+
+`clear` and `abandon` are disabled on a finished board just as their buttons
+are, and say so — `already solved`, or `nothing to clear` on an untouched one —
+rather than reporting `ok` for something they did not do.
 
 `newGame` takes `Easy`, `Medium`, `Hard`, or `Expert`; an unrecognised name
 falls back to the configured difficulty rather than failing, so a keybinding

@@ -53,6 +53,33 @@ stems turn to fog at this size. Vertical bars are 28px wide and cannot fit a
 58px wordmark, so they fall back to the compact grid glyph automatically;
 `barStyle: "Icon"` forces that everywhere.
 
+A win fills the wordmark's cells and brightens its edge rather than recolouring
+it. `WidgetButton` defaults its active colour to `bar.urgent`, which made a
+solved board wear the bar's error colour; the accent is the obvious replacement
+but is not reliable, since a theme may set `accent` equal to `foreground` —
+Kanagawa does — leaving the win invisible. Fill reads in every theme. The accent
+is still used for the vertical-bar glyph, which has no wordmark to fill.
+
+**The win parade** bursts all 81 digits into confetti, empties the grid, and
+lands a message on it. That is 324 pieces, and the naive shape — each piece
+animating its own position, spin and fade — is roughly sixteen hundred running
+animations inside the process that also draws the bar, the notifications and
+every other widget. So the whole effect runs on a single `NumberAnimation`
+driving one `celebrateProgress` property from 0 to 1, and each piece derives its
+position and opacity from that value plus a trajectory seeded once when the
+parade starts. One animation, no allocation while it runs, and nothing left
+alive afterwards — the pieces are dropped when it ends.
+
+Seeding matters: a piece that re-rolled its own randomness inside a binding
+would be re-evaluated every frame and jitter in place instead of flying.
+
+A solved board disables undo, clear and abandon. Each was a route from a
+finished board back to an unfinished one, and every question that followed —
+does the parade replay, how many times, what resets it — existed only to service
+that. Closing the routes deleted the bookkeeping. What remains is a `restoring`
+flag, because a solved game read back from `game.json` arrives already solved
+and must not throw a parade on every shell restart.
+
 **The attract loop** deals a throwaway Easy board and fills it in a shuffled
 order, so it reads as someone solving rather than a cursor sweeping the grid. It
 animates only while the panel is actually open — an unwatched animation inside
