@@ -338,7 +338,8 @@ Panel {
     cells = puzzle.slice()
     notes = Sudoku.emptyNotes()
     solved = false
-    solveRecorded = false
+    // solveRecorded deliberately survives: clearing replays the same deal, and
+    // one deal is worth at most one recorded solve.
     selected = firstEmptyCell()
     scheduleSave()
   }
