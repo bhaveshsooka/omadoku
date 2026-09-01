@@ -150,6 +150,15 @@ BarWidget {
       return s.solved + "/" + s.started + " solved, " + Model.winRate(s)
         + "% win rate, streak " + s.streak + " (best " + s.bestStreak + ")"
     }
+    // Irreversible, so it asks in the panel where the question can be read,
+    // exactly as newGame and abandon do.
+    function resetStats(): string {
+      if (!root.panel) return "unavailable"
+      if (root.panel.stats.started === 0) return "nothing to reset"
+      root.panel.requestResetStats()
+      root.panel.open()
+      return "confirm"
+    }
     function pause(): string {
       if (!root.panel) return "unavailable"
       root.panel.togglePause()

@@ -193,6 +193,12 @@ Stats are derived entirely from two events the game already knows about — a
 board dealt, and a board solved with its time and hint count — so there is no
 history file to drift out of sync with the save.
 
+**Reset statistics** at the foot of the tab erases the lot. It asks first, and
+cannot be undone. It wipes the lifetime record only — the game you are playing
+lives in a separate file and is untouched, so a reset is not a quiet way to lose
+your board. To clear both, reset the stats and abandon the game, or remove
+`~/.local/state/omadoku` while the shell is stopped.
+
 ## Settings
 
 Per-widget settings live in the widget's entry in `~/.config/omarchy/shell.json`
@@ -224,6 +230,7 @@ omarchy-shell io.github.bhaveshsooka.omadoku clear
 omarchy-shell io.github.bhaveshsooka.omadoku abandon
 omarchy-shell io.github.bhaveshsooka.omadoku status
 omarchy-shell io.github.bhaveshsooka.omadoku stats
+omarchy-shell io.github.bhaveshsooka.omadoku resetStats
 ```
 
 `newGame` and `abandon` respect the confirmation: with a game in progress they
@@ -235,6 +242,10 @@ has no way to explain itself.
 `clear` and `abandon` are disabled on a finished board just as their buttons
 are, and say so — `already solved`, or `nothing to clear` on an untouched one —
 rather than reporting `ok` for something they did not do.
+
+`resetStats` never wipes anything on its own: it returns `confirm` and opens the
+panel onto the question, so an irreversible action always takes a second,
+deliberate press somewhere you can read what it does.
 
 `newGame` takes `Easy`, `Medium`, `Hard`, or `Expert`; an unrecognised name
 falls back to the configured difficulty rather than failing, so a keybinding

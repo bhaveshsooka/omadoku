@@ -601,6 +601,21 @@ Panel {
     cancelPending()
     if (action === "new") newGame(level)
     else if (action === "abandon") abandon()
+    else if (action === "resetStats") resetStats()
+  }
+
+  // Wipes the lifetime record and nothing else. The game in progress lives in
+  // its own file and is left alone: a stats reset that also swept away the
+  // board you were playing would be a second, unrelated destruction hiding
+  // behind one button. Abandon is how you clear a board.
+  function requestResetStats() {
+    if (stats.started === 0) return
+    pendingAction = "resetStats"
+  }
+
+  function resetStats() {
+    stats = Model.emptyStats()
+    saveStats()
   }
 
   function cancelPending() {
@@ -611,7 +626,23 @@ Panel {
   function confirmPrompt() {
     if (pendingAction === "abandon") return "Abandon this game?"
     if (pendingAction === "new") return "Start a new " + pendingDifficulty.toLowerCase() + " game?"
+    if (pendingAction === "resetStats") return "Reset all statistics?"
     return ""
+  }
+
+  // The three prompts differ enough that a ternary in the delegate stopped
+  // carrying its weight once there were more than two of them.
+  function confirmDetail() {
+    if (pendingAction === "abandon") return "This board and its time are lost, and the streak resets."
+    if (pendingAction === "new") return "The current board is lost, and the streak resets."
+    if (pendingAction === "resetStats") return "Every solve, time and streak on record is erased. This cannot be undone. The game you are playing is not affected."
+    return ""
+  }
+
+  function confirmVerb() {
+    if (pendingAction === "abandon") return "Abandon"
+    if (pendingAction === "resetStats") return "Reset"
+    return "New game"
   }
 
   // Pencil marks are for working a board out, so the toggle is dead once there
@@ -1477,6 +1508,26 @@ Panel {
             font.pixelSize: Style.font.caption
             wrapMode: Text.WordWrap
           }
+
+          // Hidden rather than dimmed while the question is up, so the button
+          // cannot be pressed a second time by muscle memory - the same reason
+          // the confirmation replaces the action rows on the board tab.
+          Button {
+            visible: root.pendingAction === ""
+            width: parent.width
+            iconText: "󰩹"
+            iconSize: Style.font.body
+            text: "Reset statistics"
+            fontSize: Style.font.caption
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            horizontalPadding: Style.space(2)
+            verticalPadding: Style.spacing.controlPaddingY
+            bordered: true
+            opacity: root.stats.started > 0 ? 1.0 : 0.4
+            tooltipText: "Erase every solve, time and streak on record"
+            onClicked: root.requestResetStats()
+          }
         }
 
         // ---------- actions: play ----------
@@ -1644,9 +1695,7 @@ Panel {
           Text {
             width: parent.width
             textFormat: Text.PlainText
-            text: root.pendingAction === "abandon"
-              ? "This board and its time are lost, and the streak resets."
-              : "The current board is lost, and the streak resets."
+            text: root.confirmDetail()
             color: Qt.darker(root.fg, 1.4)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -1662,7 +1711,8 @@ Panel {
 
             Button {
               width: confirmRow.cellWidth
-              text: "Keep playing"
+              // Nothing is being played when the question is about statistics.
+              text: root.pendingAction === "resetStats" ? "Keep them" : "Keep playing"
               fontSize: Style.font.bodySmall
               foreground: root.fg
               fontFamily: root.fontFamily
@@ -1675,7 +1725,7 @@ Panel {
 
             Button {
               width: confirmRow.cellWidth
-              text: root.pendingAction === "abandon" ? "Abandon" : "New game"
+              text: root.confirmVerb()
               fontSize: Style.font.bodySmall
               foreground: root.bar ? root.bar.urgent : Color.urgent
               fontFamily: root.fontFamily
