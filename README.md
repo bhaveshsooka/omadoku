@@ -11,54 +11,109 @@ the long-lived `omarchy-shell` Quickshell process.
                                        └─ click for the board
 ```
 
+<p align="center"><img src="preview.gif" alt="The Omadoku panel with no game running: a demo board solving itself while it waits for a difficulty" width="306"></p>
+
+## Requirements
+
+| Needs           | Why                                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Omarchy 4.x     | Uses the `omarchy-shell` plugin API (`schemaVersion: 1`)                                                                |
+| Quickshell 0.3+ | The shell Omadoku's QML runs inside; installed by Omarchy                                                               |
+| A Nerd Font     | The bar falls back to a grid glyph on vertical bars, and the panel buttons use Material Design icons. Omarchy ships one |
+
+**External dependencies: none.** No libraries are vendored or downloaded, no
+package needs installing, and nothing is fetched at runtime. Omadoku makes no
+network requests of any kind. The only external command it ever runs is
+`mkdir -p` to create its own state directory.
+
 ## Install
 
-Omadoku is a plain plugin directory. Clone or symlink it into the user plugin
-path, rescan, and enable:
+```bash
+omarchy plugin add https://github.com/bhaveshsooka/omadoku.git --enable
+```
+
+That clones, validates, and enables in one go. It asks twice before doing
+anything: once to confirm the clone — plugins run unsandboxed inside
+`omarchy-shell`, so read the code first — and once to pick which bar section to
+put it in, defaulting to the right. Add `--yes` to skip both and take the
+defaults, which is the path for scripts.
+
+## Update
 
 ```bash
-ln -s /1-projects/prsn-project-omarchy-plugins/omadoku \
-      ~/.config/omarchy/plugins/io.github.bhaveshsooka.omadoku
+omarchy plugin update io.github.bhaveshsooka.omadoku   # fast-forward, shows a diff first
+```
 
-omarchy-shell shell rescanPlugins
-omarchy plugin enable io.github.bhaveshsooka.omadoku
+## Remove
+
+```bash
+omarchy plugin remove io.github.bhaveshsooka.omadoku   # disable, unlink, rescan
+rm -rf ~/.local/state/omadoku                          # the save and stats
+```
+
+`remove` disables the plugin — which takes the widget out of your bar layout —
+deletes the plugin directory, and rescans. The save and stats are the only thing
+Omadoku leaves behind, and the `rm` above is all it takes to clear them. Nothing
+else on your system is touched.
+
+To move the widget afterwards:
+
+```bash
 omarchy bar move io.github.bhaveshsooka.omadoku --section right
 ```
 
-To remove it: `omarchy plugin remove io.github.bhaveshsooka.omadoku --yes`, then
-`rm -rf ~/.local/state/omadoku` for the save and stats.
+<details>
+<summary>Installing by hand, or recovering when the shell will not start</summary>
 
-### Working on it
-
-Omarchy hot-reloads plugin code when a file under
-`~/.config/omarchy/plugins/` changes — but **that watcher does not follow the
-symlink**. Editing the repo copy changes nothing the shell can see, and
-`omarchy-shell shell rescanPlugins` does not pick the edits up either: it
-rebuilds the plugin from the *old* source, which discards whatever game was in
-progress without loading your changes. After editing, run:
+Without `plugin add`:
 
 ```bash
-omarchy restart shell
+git clone https://github.com/bhaveshsooka/omadoku.git \
+  ~/.config/omarchy/plugins/io.github.bhaveshsooka.omadoku
+
+omarchy-shell shell rescanPlugins
+omarchy plugin enable io.github.bhaveshsooka.omadoku
 ```
 
-If you would rather have working hot-reload, copy the plugin in instead of
-symlinking it and edit it in place under `~/.config/omarchy/plugins/`.
+The directory name must match the manifest id.
 
-## Playing
+`plugin remove` talks to a running shell over IPC, so if the shell will not
+start it cannot help. Remove the plugin by hand instead: delete
+`~/.config/omarchy/plugins/io.github.bhaveshsooka.omadoku/`, drop the
+`io.github.bhaveshsooka.omadoku` entry from `bar.layout` in
+`~/.config/omarchy/shell.json`, then run `omarchy restart shell`.
+
+</details>
+
+## What Omadoku writes
+
+It owns two files, both under `XDG_STATE_HOME`, both created on first run:
+
+| Path                                | Contents                        |
+| ----------------------------------- | ------------------------------- |
+| `~/.local/state/omadoku/game.json`  | The game in progress            |
+| `~/.local/state/omadoku/stats.json` | Lifetime solve counts and times |
+
+**It never writes your configuration.** `~/.config/omarchy/shell.json` changes
+only when _you_ run `omarchy plugin enable/disable`, `omarchy bar move`, or edit
+the plugin's settings — all of which are Omarchy's own commands acting on your
+instruction, not something the plugin does on its own. Omadoku writes nothing
+outside its own state directory, touches no other application's config, and
+requires no elevated privileges.
 
 ## Starting a game
 
 With no game in progress the panel is not blank — a demo board solves itself
 behind the difficulty buttons, and the widget waits. Picking a difficulty only
-*arms* it; **Start** deals the board, and stays disabled until something is
+_arms_ it; **Start** deals the board, and stays disabled until something is
 armed. Nothing is ever dealt on your behalf.
 
 The same rule holds mid-game: clicking a difficulty changes what **New** will
 deal, it does not deal it. So a stray click on Expert can never cost you the
 board you are on.
 
-Opening the panel always returns you to the game in progress — whatever tab you
-left showing, and whatever was on screen — and never deals a new one.
+Opening the panel always returns you to the game in progress, and never deals a
+new one. It lands on the Board tab even if you left it showing Stats.
 
 ## Playing
 
@@ -69,22 +124,22 @@ click to clear it.
 
 **Keyboard**, once the popup has focus:
 
-| Key | Does |
-|---|---|
-| `1`–`4` | *With no game:* arm Easy / Medium / Hard / Expert |
-| `Enter` | *With no game:* start the armed board |
-| `1`–`9` | Place the digit, or pencil it in when notes mode is on |
-| `0`, `.`, `Backspace`, `Delete`, `x` | Clear the cell |
-| Arrows or `hjkl` | Move the cursor (it wraps at the edges) |
-| `Space` or `n` | Toggle pencil marks |
-| `a` | Fill every empty cell with all its legal candidates |
-| `u` / `r` | Undo / redo |
-| `?` | Reveal one cell |
-| `p` | Pause the clock |
-| `c` | Clear your entries, keep the puzzle |
-| `g` | New game at the armed difficulty |
-| `s` / `b` | Switch to the Stats / Board tab |
-| `Esc` | Back out of a prompt, then the Stats tab, then close |
+| Key                                  | Does                                                   |
+| ------------------------------------ | ------------------------------------------------------ |
+| `1`–`4`                              | _With no game:_ arm Easy / Medium / Hard / Expert      |
+| `Enter`                              | _With no game:_ start the armed board                  |
+| `1`–`9`                              | Place the digit, or pencil it in when notes mode is on |
+| `0`, `.`, `Backspace`, `Delete`, `x` | Clear the cell                                         |
+| Arrows or `hjkl`                     | Move the cursor (it wraps at the edges)                |
+| `Space` or `n`                       | Toggle pencil marks                                    |
+| `a`                                  | Fill every empty cell with all its legal candidates    |
+| `u` / `r`                            | Undo / redo                                            |
+| `?`                                  | Reveal one cell                                        |
+| `p`                                  | Pause the clock                                        |
+| `c`                                  | Clear your entries, keep the puzzle                    |
+| `g`                                  | New game at the armed difficulty                       |
+| `s` / `b`                            | Switch to the Stats / Board tab                        |
+| `Esc`                                | Back out of a prompt, then the Stats tab, then close   |
 
 On a confirmation prompt, `y` or `Enter` confirms and `n` or `Esc` cancels.
 
@@ -105,16 +160,16 @@ key, the Pause button, a right click on the bar icon, or IPC. Set
 
 Three ways to stop a game, in increasing order of loss:
 
-| Action | Keeps | Loses | Undoable |
-|---|---|---|---|
-| **Clear** (`c`) | the puzzle and the clock | your entries and pencil marks | yes — press `u` |
-| **New** (`g`) | nothing of this board | the board; breaks the streak | no |
-| **Abandon** | nothing | the board and its time; breaks the streak | no |
+| Action          | Keeps                    | Loses                                     | Undoable        |
+| --------------- | ------------------------ | ----------------------------------------- | --------------- |
+| **Clear** (`c`) | the puzzle and the clock | your entries and pencil marks             | yes — press `u` |
+| **New** (`g`)   | nothing of this board    | the board; breaks the streak              | no              |
+| **Abandon**     | nothing                  | the board and its time; breaks the streak | no              |
 
 Clear is undoable, so it just does it. New and Abandon ask first — but only when
 there is something to lose: dealing over an untouched board skips the prompt.
-Right-clicking the bar icon with a game in progress opens the panel onto the
-question rather than destroying it somewhere you cannot see.
+The question is always asked in the panel, where you can see it — which is why
+neither can be triggered from the bar icon.
 
 Abandon returns to the idle state — no board, no clock, the bar icon back to
 "click to start", and the difficulty selection cleared, so the widget is asking
@@ -131,7 +186,7 @@ The **Stats** tab (`s`) keeps a lifetime record in
   solved games
 
 A streak is consecutive solves; abandoning a board, or dealing a new one over a
-board you had made progress on, resets it to zero. A solve counts once no matter
+board you had not finished, resets it to zero. A solve counts once no matter
 how you got there — undoing past the finish and re-solving does not count twice.
 
 Stats are derived entirely from two events the game already knows about — a
@@ -143,17 +198,17 @@ history file to drift out of sync with the save.
 Per-widget settings live in the widget's entry in `~/.config/omarchy/shell.json`
 and are editable through Setup > Plugins.
 
-| Key | Default | Meaning |
-|---|---|---|
-| `difficulty` | `Medium` | Difficulty for new games |
-| `showTimer` | `true` | Show elapsed time beside the bar icon |
-| `barStyle` | `Wordmark` | `Wordmark` draws OMADOKU as a row of sudoku cells; `Icon` uses the compact grid glyph |
-| `cellSize` | `34` | Board cell size in pixels (22–56) |
-| `highlightPeers` | `true` | Shade the selected cell's row, column and box |
-| `highlightSameDigit` | `true` | Shade cells holding the same digit |
-| `markConflicts` | `true` | Colour repeated digits |
-| `autoCleanNotes` | `true` | Placing a digit erases that pencil mark from cells it sees |
-| `pauseWhenClosed` | `false` | Stop the clock whenever the board is off screen |
+| Key                  | Default    | Meaning                                                                               |
+| -------------------- | ---------- | ------------------------------------------------------------------------------------- |
+| `difficulty`         | `Medium`   | Difficulty for new games                                                              |
+| `showTimer`          | `true`     | Show elapsed time beside the bar icon                                                 |
+| `barStyle`           | `Wordmark` | `Wordmark` draws OMADOKU as a row of sudoku cells; `Icon` uses the compact grid glyph |
+| `cellSize`           | `34`       | Board cell size in pixels (22–56)                                                     |
+| `highlightPeers`     | `true`     | Shade the selected cell's row, column and box                                         |
+| `highlightSameDigit` | `true`     | Shade cells holding the same digit                                                    |
+| `markConflicts`      | `true`     | Colour repeated digits                                                                |
+| `autoCleanNotes`     | `true`     | Placing a digit erases that pencil mark from cells it sees                            |
+| `pauseWhenClosed`    | `false`    | Stop the clock whenever the board is off screen                                       |
 
 ## IPC
 
@@ -184,66 +239,18 @@ a reserved word.)
 
 ## How it works
 
-| File | Role |
-|---|---|
-| `manifest.json` | Plugin declaration and the settings schema |
-| `BarWidget.qml` | The bar icon, the IPC target, and the panel loader |
-| `Panel.qml` | The board, game state, keyboard handling, and the save file |
-| `Sudoku.js` | Puzzle generation, solving, and validation — pure functions |
-| `Icon.qml` | The bar wordmark, drawn rather than set in a font |
-| `Model.js` | Glyphs, labels, time formatting, save and stats serialisation |
+Puzzle generation, the difficulty model, persistence, the drawn bar wordmark,
+and the attract loop are described in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**Generation.** A solved grid is produced by permuting the canonical sudoku
-pattern — relabelling digits, shuffling rows within bands, bands within the
-grid, the same for columns, and optionally transposing. Those are exactly the
-transformations that preserve validity, so the result is always legal and
-costs no search. Clues are then carved out in 180°-symmetric pairs, keeping
-only removals that leave the solution unique.
+## Licence and credits
 
-This all runs on the shell's UI thread, which every widget in your bar shares,
-so it is bounded twice over: the solution counter stops at two solutions rather
-than enumerating, and the search carries a node budget. Exhausting the budget
-returns the pessimistic "not unique" answer, so the generator keeps the clue it
-was about to remove — a blown budget costs an easier puzzle, never a broken one.
-Measured worst case is about 1ms per puzzle.
+MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Bhavesh Sooka.
 
-**On difficulty.** The four levels set a target clue count (45 / 36 / 30 / 26),
-not a required solving technique. Clue count correlates with difficulty but does
-not determine it, so "Expert" is reliably sparse rather than reliably demanding
-advanced technique. Uniqueness can also block removal, so a board occasionally
-lands above its target.
+All code in this repository is original work. There are no vendored,
+third-party, or generated dependencies. The bar wordmark and every icon in the
+panel are either drawn by the plugin's own QML (`Icon.qml`) or are standard
+Material Design glyphs supplied by the Nerd Font already on the system — no icon
+or image files are redistributed here.
 
-**Persistence.** The game is written to
-`~/.local/state/omadoku/game.json`, the lifetime record to `stats.json` beside it — under `XDG_STATE_HOME` because it is real
-user state, not regenerable cache. Writes are debounced and checkpointed every
-15 seconds, so a crash costs seconds rather than the session. The save is
-versioned and fully validated on load: wrong version, wrong shape, an
-out-of-range digit, or clues that disagree with their own solution all read as
-"no saved game" rather than restoring a board that cannot be finished.
-
-A restored game comes back paused, and the clock starts again when you next open
-the board — the shell restarting should not cost you minutes you never played.
-
-**The bar wordmark** is drawn in QML because no icon font carries it, and
-because the obvious alternative does not survive a 26px bar: a 3×3 grid of nine
-characters gives each glyph about five pixels and reads as noise. Seven cells in
-one row gives each letter the icon's full height. Divisions are marked by
-brightness rather than thickness — a 2px rule around an 18px box eats the cell
-it is meant to divide — and the letters use hinted rendering, since antialiased
-stems turn to fog at this size. Vertical bars are 28px wide and cannot fit a
-58px wordmark, so they fall back to the compact grid glyph automatically;
-`barStyle: "Icon"` forces that everywhere.
-
-**The attract loop** deals a throwaway Easy board and fills it in a shuffled
-order, so it reads as someone solving rather than a cursor sweeping the grid. It
-animates only while the panel is actually open — an unwatched animation inside
-the process that draws your whole desktop is pure waste — and its state is kept
-entirely separate from the real game's, so the two can never be confused.
-
-**The clock** is wall-clock based rather than tick-counted. A one-second timer
-that increments a counter drifts and stalls whenever the shell is busy, which
-for a process hosting the whole desktop is often.
-
-## Licence
-
-MIT
+`preview.png` and `preview.gif` are screenshots of this plugin running, captured
+from its own interface. They contain no third-party artwork.
