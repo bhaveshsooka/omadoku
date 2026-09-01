@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.bhaveshsooka.omadoku",
   "name": "Omadoku",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "Bhavesh Sooka",
   "license": "MIT",
   "description": "Sudoku in the Omarchy bar: a keyboard-driven board, pencil marks, and a game that survives a shell restart.",
