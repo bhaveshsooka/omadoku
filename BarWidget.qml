@@ -150,6 +150,15 @@ BarWidget {
       return s.solved + "/" + s.started + " solved, " + Model.winRate(s)
         + "% win rate, streak " + s.streak + " (best " + s.bestStreak + ")"
     }
+    // Puts a finished board away. Nothing is lost, so unlike abandon it needs
+    // no confirmation and costs no streak.
+    function done(): string {
+      if (!root.panel) return "unavailable"
+      if (!root.panel.started) return "no game"
+      if (!root.panel.solved) return "not solved"
+      root.panel.finishBoard()
+      return "ok"
+    }
     // Irreversible, so it asks in the panel where the question can be read,
     // exactly as newGame and abandon do.
     function resetStats(): string {

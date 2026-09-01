@@ -82,6 +82,11 @@ alive afterwards — the pieces are dropped when it ends.
 Seeding matters: a piece that re-rolled its own randomness inside a binding
 would be re-evaluated every frame and jitter in place instead of flying.
 
+A solved board disables undo and clear, and swaps Abandon for **Done** —
+`finishBoard()`, which shares `clearToIdle()` with `abandon()` but records no
+abandonment and breaks no streak. Without it, disabling Abandon on a win left no
+route from a finished board back to the attract screen at all.
+
 A solved board disables undo, clear and abandon. Each was a route from a
 finished board back to an unfinished one, and every question that followed —
 does the parade replay, how many times, what resets it — existed only to service

@@ -487,6 +487,21 @@ Panel {
     // board that reaches here is one being given up on.
     stats = Model.recordAbandon(stats)
     saveStats()
+    clearToIdle()
+  }
+
+  // Puts a finished board away and returns to the attract screen. Deliberately
+  // not abandon(): there is nothing here to give up on, so it records no
+  // abandonment and breaks no streak - the solve was already counted when the
+  // last digit landed. Nothing is lost either, which is why it acts at once
+  // rather than asking.
+  function finishBoard() {
+    if (!started || !solved) return
+    clearToIdle()
+  }
+
+  // Everything both routes share: back to no game, no clock, no save on disk.
+  function clearToIdle() {
     puzzle = Sudoku.emptyGrid()
     solution = Sudoku.emptyGrid()
     cells = Sudoku.emptyGrid()
@@ -1656,18 +1671,24 @@ Panel {
 
           Button {
             width: gameRow.cellWidth
-            iconText: "󰗼"
+            // One slot, two jobs from the same family - get this board off the
+            // table. Which job depends on whether there is anything left to
+            // give up on, so a won board offers the exit that costs nothing
+            // instead of a disabled button and no way back to the start screen.
+            iconText: root.solved ? "󰄬" : "󰗼"
             iconSize: Style.font.body
-            text: "Abandon"
+            text: root.solved ? "Done" : "Abandon"
             fontSize: Style.font.caption
             foreground: root.fg
             fontFamily: root.fontFamily
             horizontalPadding: Style.space(2)
             verticalPadding: Style.spacing.controlPaddingY
             bordered: true
-            opacity: root.canAbandon ? 1.0 : 0.4
-            tooltipText: "Give up this board and clear it"
-            onClicked: root.requestAbandon()
+            opacity: root.canAbandon || root.solved ? 1.0 : 0.4
+            tooltipText: root.solved
+              ? "Put this board away and go back to the start screen"
+              : "Give up this board and clear it"
+            onClicked: root.solved ? root.finishBoard() : root.requestAbandon()
           }
         }
 

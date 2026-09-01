@@ -114,9 +114,9 @@ click to clear it.
 
 On a confirmation prompt, `y` or `Enter` confirms and `n` or `Esc` cancels.
 
-A finished board stops taking input: undo, redo, clear, abandon and the pencil
-mark toggle are all disabled, and **New** is the way on. See
-[Winning](#winning).
+A finished board stops taking input: undo, redo, clear and the pencil mark
+toggle are all disabled, and Abandon gives way to **Done**. Deal a new board, or
+press Done to go back to the start screen. See [Winning](#winning).
 
 Typing the digit that is already in a cell clears it, which is what every other
 sudoku does.
@@ -153,10 +153,11 @@ key, the Pause button, a right click on the bar icon, or IPC. Set
 curtained board takes no input, so Hint and the pencil mark toggle are disabled
 until you resume.
 
-Three ways to stop a game, in increasing order of loss:
+Four ways to take a board off the table, in increasing order of loss:
 
 | Action          | Keeps                    | Loses                                     | Undoable        |
 | --------------- | ------------------------ | ----------------------------------------- | --------------- |
+| **Done**        | nothing                  | nothing — the board was already finished  | n/a             |
 | **Clear** (`c`) | the puzzle and the clock | your entries and pencil marks             | yes — press `u` |
 | **New** (`g`)   | nothing of this board    | the board; breaks the streak              | no              |
 | **Abandon**     | nothing                  | the board and its time; breaks the streak | no              |
@@ -167,12 +168,17 @@ The question is always asked in the panel, where you can see it — which is why
 neither can be triggered from the bar icon.
 
 Clear and Abandon apply to a game in progress, so both are disabled once a board
-is solved — there is nothing left to clear and nothing left to give up on. New
-is the only way off a finished board.
+is solved — there is nothing left to clear and nothing left to give up on. On a
+finished board the Abandon button becomes **Done**, which puts the board away
+and returns you to the start screen. It acts immediately: nothing is at stake,
+the solve was already counted, and unlike Abandon it costs no streak.
 
-Abandon returns to the idle state — no board, no clock, the bar icon back to
-"click to start", and the difficulty selection cleared, so the widget is asking
-the question again rather than holding a stale answer.
+Abandon and Done both return to the idle state — no board, no clock, the bar
+icon back to "click to start", the demo board solving itself behind the
+difficulty buttons again, and the difficulty selection cleared, so the widget is
+asking the question again rather than holding a stale answer. They differ only
+in what they cost: Abandon records a given-up game and breaks the streak, Done
+records nothing.
 
 ## Stats
 
@@ -230,6 +236,7 @@ omarchy-shell io.github.bhaveshsooka.omadoku clear
 omarchy-shell io.github.bhaveshsooka.omadoku abandon
 omarchy-shell io.github.bhaveshsooka.omadoku status
 omarchy-shell io.github.bhaveshsooka.omadoku stats
+omarchy-shell io.github.bhaveshsooka.omadoku done
 omarchy-shell io.github.bhaveshsooka.omadoku resetStats
 ```
 
@@ -242,6 +249,9 @@ has no way to explain itself.
 `clear` and `abandon` are disabled on a finished board just as their buttons
 are, and say so — `already solved`, or `nothing to clear` on an untouched one —
 rather than reporting `ok` for something they did not do.
+
+`done` puts a finished board away and returns to the start screen, the same as
+the button; it answers `not solved` on a game still in progress.
 
 `resetStats` never wipes anything on its own: it returns `confirm` and opens the
 panel onto the question, so an irreversible action always takes a second,
