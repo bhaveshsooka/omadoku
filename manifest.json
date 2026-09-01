@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.bhaveshsooka.omadoku",
   "name": "Omadoku",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "author": "Bhavesh Sooka",
   "license": "MIT",
   "description": "Sudoku in the Omarchy bar: a keyboard-driven board, pencil marks, and a game that survives a shell restart.",
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Omadoku",
-    "description": "A sudoku board in a bar popup. Left click opens it, right click starts a new game, middle click pauses.",
+    "description": "A sudoku board in a bar popup. Left click opens it, right click pauses; boards are dealt from the panel, where the confirmation is visible.",
     "category": "Games",
     "allowMultiple": false,
     "defaultSection": "right",
