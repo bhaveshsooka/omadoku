@@ -43,6 +43,15 @@ out-of-range digit, or clues that disagree with their own solution all read as
 A restored game comes back paused, and the clock starts again when you next open
 the board — the shell restarting should not cost you minutes you never played.
 
+Resetting statistics writes `emptyStats()` over `stats.json` and stops there.
+The two files have separate lifetimes on purpose, and a reset that also swept
+away the board in `game.json` would be a second, unrelated destruction hiding
+behind one button. It routes through the same `pendingAction` confirmation the
+board's destructive actions use, so there is one prompt mechanism rather than
+two — which is why the confirmation's text moved out of delegate ternaries and
+into `confirmPrompt()` / `confirmDetail()` / `confirmVerb()` once there were
+three cases instead of two.
+
 **The bar wordmark** is drawn in QML because no icon font carries it, and
 because the obvious alternative does not survive a 26px bar: a 3×3 grid of nine
 characters gives each glyph about five pixels and reads as noise. Seven cells in
