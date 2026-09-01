@@ -16,6 +16,14 @@ Item {
   property int barSize: Style.bar.sizeHorizontal
   property string letters: "OMADOKU"
 
+  // Lit up on a win: the cells fill and the edge brightens.
+  //
+  // Signalled by fill rather than by colour because the bar's palette has an
+  // urgent colour and no success one, and the obvious substitute does not hold
+  // - in Kanagawa, among others, accent and foreground are the same value, so
+  // an accent-coloured win is no win at all. Filling reads in every theme.
+  property bool solved: false
+
   // Hairlines stay at one physical pixel: a 2px rule around an 18px box eats
   // the cell it is supposed to be dividing.
   readonly property real line: 1
@@ -30,12 +38,16 @@ Item {
   implicitWidth: cellWidth * cells + line
   implicitHeight: cellHeight
 
-  // The board edge.
+  // The board edge, and the fill behind it that carries the solved state.
   Rectangle {
     anchors.fill: parent
-    color: "transparent"
+    color: root.solved ? root.shade(0.20) : "transparent"
     border.width: root.line
-    border.color: root.shade(0.55)
+    border.color: root.shade(root.solved ? 0.85 : 0.55)
+
+    // Wins arrive, they do not blink into place.
+    Behavior on color { ColorAnimation { duration: 220 } }
+    Behavior on border.color { ColorAnimation { duration: 220 } }
   }
 
   // Cell divisions, dimmer than the edge. Brightness rather than thickness

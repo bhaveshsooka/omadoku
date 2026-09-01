@@ -82,6 +82,8 @@ BarWidget {
   function requestAbandon() {
     if (!panel) return "unavailable"
     if (!panel.started) return "no game"
+    // A won board is not abandonable, the same as at the button.
+    if (!panel.canAbandon) return "already solved"
     if (panel.needsConfirm) {
       panel.requestAbandon()
       panel.open()
@@ -137,6 +139,7 @@ BarWidget {
     // Clearing keeps the puzzle and is undoable, so it needs no confirmation.
     function clear(): string {
       if (!root.panel) return "unavailable"
+      if (!root.panel.canClear) return root.panel.solved ? "already solved" : "nothing to clear"
       root.panel.restart()
       return "ok"
     }
@@ -185,6 +188,12 @@ BarWidget {
     // A finished board is worth a colour change; a game in progress is not,
     // since the bar should not nag while you think.
     active: root.solved
+    // WidgetButton's activeColor defaults to bar.urgent - the colour this bar
+    // reserves for things that are wrong. A solved sudoku is the opposite of
+    // that, so it takes the theme's accent instead. Deliberately not a green:
+    // the palette has no success token, so any green would be a fixed colour
+    // sitting in a widget that otherwise follows the theme everywhere.
+    activeColor: Color.accent
     dimmed: root.paused
 
     tooltipText: Model.tooltip({
@@ -213,6 +222,7 @@ BarWidget {
       Icon {
         anchors.verticalCenter: parent.verticalCenter
         barSize: root.barSize
+        solved: root.solved
         fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
         // Track the button's own colour so solved and paused states carry
         // through to the wordmark rather than only to the timer beside it.
