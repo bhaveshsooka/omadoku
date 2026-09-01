@@ -246,11 +246,15 @@ and the attract loop are described in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Bhavesh Sooka.
 
-All code in this repository is original work. There are no vendored,
-third-party, or generated dependencies. The bar wordmark and every icon in the
-panel are either drawn by the plugin's own QML (`Icon.qml`) or are standard
-Material Design glyphs supplied by the Nerd Font already on the system — no icon
-or image files are redistributed here.
+Written for this plugin; no third-party code is vendored or bundled, and there
+are no external dependencies. The bar-widget and panel scaffolding follows the
+pattern established by [OmaWarden](https://github.com/salemsayed/omawarden)
+(MIT, © 2026 Salem Sayed), whose `BarWidget.qml` was used as a reference for
+Omarchy's plugin-hosting contract.
+
+The bar wordmark and every icon in the panel are either drawn by the plugin's
+own QML (`Icon.qml`) or are standard Material Design glyphs supplied by the Nerd
+Font already on the system — no icon or image files are redistributed here.
 
 `preview.png` and `preview.gif` are screenshots of this plugin running, captured
 from its own interface. They contain no third-party artwork.

@@ -7,6 +7,13 @@ import "Model.js" as Model
 // The bar button. Owns the plugin's single IPC target and the icon; the board,
 // the game state, and the save file all live in Panel.qml, which this loads
 // eagerly so a game keeps its clock running while the popup is closed.
+//
+// The loader/injectPanel scaffolding and the deferred IPC registration below
+// follow OmaWarden's BarWidget.qml (MIT, (c) 2026 Salem Sayed),
+// https://github.com/salemsayed/omawarden - it is that project's solution to
+// two Omarchy quirks: the host assigning `bar` and `settings` across separate
+// ticks, and a moved widget briefly overlapping its own replacement on the
+// process-wide IPC target.
 BarWidget {
   id: root
 
