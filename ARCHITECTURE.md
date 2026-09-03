@@ -26,6 +26,33 @@ returns the pessimistic "not unique" answer, so the generator keeps the clue it
 was about to remove — a blown budget costs an easier puzzle, never a broken one.
 Measured worst case is about 1ms per puzzle.
 
+**The daily puzzle** is generated, not fetched. `generate()` already took an
+injectable `rng`, so the whole feature is a seeded generator — mulberry32 over
+an FNV-1a hash of `"YYYY-MM-DD|Difficulty"` — plus a day key threaded through
+the save and the stats. Every machine derives the same grid from the same date
+with no server, no network call, and nothing reported back, which also keeps the
+plugin's security profile exactly where it was.
+
+This makes `generateSolution()` and `generate()` a compatibility surface. They
+consume random numbers in a fixed order, and changing that order silently
+changes every past daily. The solver's node budget is a fixed count rather than
+a deadline, so exhausting it is deterministic too — a daily cannot come out
+differently on a slower machine.
+
+Day keys are local dates: the board should turn over at the player's midnight,
+not at Greenwich's, and the grid for a given date is identical everywhere
+regardless. Streak arithmetic is done in UTC on the date-only key, so a
+daylight-saving jump cannot make "yesterday" land on the same day or skip one.
+
+Neither the save nor the stats version was bumped for this. Both readers already
+default every absent field, so an old file migrates itself; a bump would have
+thrown away every in-progress game and every lifetime record on upgrade to buy
+nothing. The daily ledger is kept separate from `streak` because it counts
+consecutive *days* rather than consecutive wins, and it is banked once per day —
+re-solving the same board after an undo, or on a second machine, cannot move it.
+Display asks `dailyStreakNow()` rather than reading the stored value, because a
+run that lapsed last week is over even though nothing has written that down yet.
+
 **On difficulty.** The four levels set a target clue count (45 / 36 / 30 / 26),
 not a required solving technique. Clue count correlates with difficulty but does
 not determine it, so "Expert" is reliably sparse rather than reliably demanding

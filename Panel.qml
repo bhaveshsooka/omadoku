@@ -43,6 +43,11 @@ Panel {
   property bool solved: false
   property bool paused: false
   property bool started: false
+  // Non-empty when the board on the table is a daily, and the value is the day
+  // it belongs to rather than today. A board dealt before midnight and finished
+  // after it banks against its own date, which is the one it was generated from.
+  property string dailyKey: ""
+  readonly property bool isDaily: dailyKey !== ""
   property int hintsUsed: 0
   property var undoStack: []
   property var redoStack: []
@@ -200,6 +205,13 @@ Panel {
   readonly property bool canStart: selectedDifficulty !== ""
 
   // Which face of the panel is showing: the board, or the lifetime stats.
+  // Re-read whenever the panel opens rather than polled: a popup left open
+  // across midnight is rare, and a timer ticking all night inside the process
+  // that draws the whole desktop is not the price to catch it.
+  property string today: Model.dayKey()
+  function refreshToday() { today = Model.dayKey() }
+  readonly property bool dailyDone: Model.dailyDone(stats, today)
+
   property string view: "board"
 
   // Lifetime counters, kept in their own file beside the save.
@@ -212,6 +224,10 @@ Panel {
   // "" | "new" | "abandon" - a destructive action waiting on confirmation.
   property string pendingAction: ""
   property string pendingDifficulty: ""
+  // Which day the armed deal belongs to, "" for an ordinary board. Carried
+  // beside pendingDifficulty rather than as a fourth pendingAction, because a
+  // daily is the same action - deal a board - on a different grid.
+  property string pendingDailyKey: ""
 
   // ---------------------------------------------------------------- clock
   //
@@ -428,7 +444,8 @@ Panel {
     scheduleSave()
   }
 
-  function newGame(requested) {
+  // `dayKey` non-empty deals that day's shared board instead of a private one.
+  function newGame(requested, dayKey) {
     // Dealing deliberately means whatever is on disk no longer matters, so the
     // pending-load gate is satisfied from here on.
     saveLoaded = true
@@ -438,11 +455,17 @@ Panel {
     // Walking away from a board mid-solve breaks the streak exactly as
     // abandoning it does; dealing over a finished one does not.
     var previousUnfinished = started && !solved
-    var game = Sudoku.generate(level, Math.random)
+    // The daily's whole point is that the seed, not the machine, decides the
+    // grid - so it must never touch Math.random.
+    var day = Model.isDayKey(dayKey) ? dayKey : ""
+    var game = day === ""
+      ? Sudoku.generate(level, Math.random)
+      : Sudoku.generate(level, Sudoku.rngFrom(Sudoku.dailySeed(day, level)))
     stats = Model.recordStart(stats, level, previousUnfinished)
     saveStats()
     solveRecorded = false
     difficulty = level
+    dailyKey = day
     puzzle = game.puzzle
     solution = game.solution
     cells = game.puzzle.slice()
@@ -461,6 +484,14 @@ Panel {
     // does not fire and the freshly zeroed clock would never start.
     if (clockRunning) startClock()
     saveNow()
+  }
+
+  // Today's board. Unlike Start it needs no difficulty armed: the daily is
+  // meant to be one keypress from anywhere, so an unarmed picker falls back to
+  // the configured level rather than refusing.
+  function newDaily(requested) {
+    refreshToday()
+    newGame(requested || root.selectedDifficulty || root.difficultySetting, root.today)
   }
 
   // Wipe the player's entries, keep the puzzle. Deliberately undoable rather
@@ -513,6 +544,7 @@ Panel {
     solveRecorded = false
     paused = false
     started = false
+    dailyKey = ""
     resumeOnOpen = false
     accumulatedMs = 0
     runningSince = 0
@@ -542,6 +574,9 @@ Panel {
     if (!solveRecorded) {
       solveRecorded = true
       stats = Model.recordSolve(stats, difficulty, elapsedMs, hintsUsed)
+      // A daily is an ordinary solve as well as a shared one, so it is counted
+      // by both ledgers - recordSolve above for the win, this for the day.
+      if (isDaily) stats = Model.recordDailySolve(stats, dailyKey)
       saveStats()
       scheduleSave()
     }
@@ -598,10 +633,26 @@ Panel {
     if (!level && !canStart) return
     if (needsConfirm) {
       pendingDifficulty = Model.normalizeDifficulty(level, root.difficultySetting)
+      // "new" now has two flavours; this is the private-board one. Said out
+      // loud rather than left to cancelPending, so the two entry points cannot
+      // drift into arming each other's deal.
+      pendingDailyKey = ""
       pendingAction = "new"
       return
     }
     newGame(level)
+  }
+
+  function requestDaily(level) {
+    refreshToday()
+    if (needsConfirm) {
+      pendingDifficulty = Model.normalizeDifficulty(
+        level || root.selectedDifficulty, root.difficultySetting)
+      pendingDailyKey = root.today
+      pendingAction = "new"
+      return
+    }
+    newDaily(level)
   }
 
   function requestAbandon() {
@@ -613,8 +664,9 @@ Panel {
   function confirmPending() {
     var action = pendingAction
     var level = pendingDifficulty
+    var day = pendingDailyKey
     cancelPending()
-    if (action === "new") newGame(level)
+    if (action === "new") newGame(level, day)
     else if (action === "abandon") abandon()
     else if (action === "resetStats") resetStats()
   }
@@ -636,11 +688,15 @@ Panel {
   function cancelPending() {
     pendingAction = ""
     pendingDifficulty = ""
+    pendingDailyKey = ""
   }
 
   function confirmPrompt() {
     if (pendingAction === "abandon") return "Abandon this game?"
-    if (pendingAction === "new") return "Start a new " + pendingDifficulty.toLowerCase() + " game?"
+    if (pendingAction === "new")
+      return pendingDailyKey !== ""
+        ? "Start today's daily puzzle?"
+        : "Start a new " + pendingDifficulty.toLowerCase() + " game?"
     if (pendingAction === "resetStats") return "Reset all statistics?"
     return ""
   }
@@ -657,7 +713,7 @@ Panel {
   function confirmVerb() {
     if (pendingAction === "abandon") return "Abandon"
     if (pendingAction === "resetStats") return "Reset"
-    return "New game"
+    return pendingDailyKey !== "" ? "Play daily" : "New game"
   }
 
   // Pencil marks are for working a board out, so the toggle is dead once there
@@ -700,6 +756,7 @@ Panel {
     if (!started) {
       if (text >= "1" && text <= "4") selectedDifficulty = Model.LEVELS[parseInt(text, 10) - 1]
       else if (text === "g" || text === "G") requestNewGame(selectedDifficulty)
+      else if (text === "d" || text === "D") requestDaily()
       else if (text === "s" || text === "S") view = "stats"
       return
     }
@@ -707,6 +764,7 @@ Panel {
     if (view === "stats") {
       if (text === "s" || text === "S" || text === "b" || text === "B") view = "board"
       else if (text === "g" || text === "G") requestNewGame(selectedDifficulty)
+      else if (text === "d" || text === "D") requestDaily()
       return
     }
     if (text >= "1" && text <= "9") {
@@ -726,6 +784,7 @@ Panel {
       case "u": case "U": undo(); break
       case "r": case "R": redo(); break
       case "g": case "G": requestNewGame(selectedDifficulty); break
+      case "d": case "D": requestDaily(); break
       case "a": case "A": fillNotes(); break
       case "p": case "P": togglePause(); break
       case "c": case "C": restart(); break
@@ -755,7 +814,8 @@ Panel {
       hintsUsed: root.hintsUsed,
       selected: root.selected,
       notesMode: root.notesMode,
-      solved: root.solved
+      solved: root.solved,
+      daily: root.dailyKey
     }))
   }
 
@@ -777,6 +837,7 @@ Panel {
     wantsAutoStart = false
     restoring = true
     difficulty = saved.difficulty
+    dailyKey = saved.daily
     puzzle = saved.puzzle
     solution = saved.solution
     cells = saved.cells
@@ -852,6 +913,7 @@ Panel {
 
   onOpenedChanged: {
     if (opened) {
+      refreshToday()
       if (started) {
         // Reopening always lands back on the game in progress, whatever tab was
         // left showing. Opening never deals a board - only a difficulty does.
@@ -945,7 +1007,9 @@ Panel {
 
             Text {
               textFormat: Text.PlainText
-              text: (root.attract ? "" : root.difficulty.toUpperCase() + " · ") + Model.statusText({
+              text: (root.attract ? ""
+                     : (root.isDaily ? "DAILY · " : "") + root.difficulty.toUpperCase() + " · ")
+                    + Model.statusText({
                 state: root.gameState,
                 filled: root.filled,
                 notesMode: root.notesMode,
@@ -1364,6 +1428,34 @@ Panel {
           onClicked: root.requestNewGame(root.selectedDifficulty)
         }
 
+        // ---------- daily (idle only) ----------
+        //
+        // Deliberately not gated on an armed difficulty the way Start is: the
+        // daily is meant to be one press from a cold panel, so an untouched
+        // picker falls back to the configured level instead of refusing. It
+        // stays pressable once today's is done - replaying a board you have
+        // already banked costs nothing and the streak refuses to count twice.
+        Button {
+          visible: root.attract && root.view === "board" && root.pendingAction === ""
+          width: parent.width
+          iconText: root.dailyDone ? "󰄬" : "󰃭"
+          iconSize: Style.font.body
+          text: root.dailyDone
+            ? "Daily done · " + Model.formatDayKey(root.today)
+            : "Today's daily · " + Model.formatDayKey(root.today)
+          fontSize: Style.font.bodySmall
+          foreground: root.fg
+          fontFamily: root.fontFamily
+          horizontalPadding: Style.space(2)
+          verticalPadding: Style.spacing.controlPaddingY
+          bordered: true
+          opacity: root.dailyDone ? 0.55 : 1.0
+          tooltipText: "The same board for everyone today, dealt at "
+            + (root.selectedDifficulty || root.difficultySetting).toLowerCase()
+            + " (D)"
+          onClicked: root.requestDaily()
+        }
+
         // ---------- digit pad ----------
         Row {
           id: padRow
@@ -1502,6 +1594,21 @@ Panel {
             TotalPair {
               label: "Best streak"
               value: String(root.stats.bestStreak)
+            }
+            TotalPair {
+              label: "Daily streak"
+              // Asked about today rather than read off the ledger: a run that
+              // lapsed last week is over, but nothing writes that down until
+              // the next daily lands.
+              value: String(Model.dailyStreakNow(root.stats, root.today))
+            }
+            TotalPair {
+              label: "Best daily streak"
+              value: String(root.stats.bestDailyStreak)
+            }
+            TotalPair {
+              label: "Dailies solved"
+              value: String(root.stats.dailySolved)
             }
             TotalPair {
               label: "Hints used"

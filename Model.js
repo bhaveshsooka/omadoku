@@ -37,12 +37,13 @@ function formatTime(ms) {
 
 function tooltip(opts) {
   if (!opts.started) return "Omadoku — click to start";
+  var tag = opts.daily ? "Daily " : "";
   if (opts.state === "solved")
-    return "Solved " + opts.difficulty.toLowerCase() + " in " + formatTime(opts.elapsedMs)
+    return "Solved " + tag.toLowerCase() + opts.difficulty.toLowerCase() + " in " + formatTime(opts.elapsedMs)
          + (opts.hintsUsed > 0 ? " · " + opts.hintsUsed + " hint" + (opts.hintsUsed === 1 ? "" : "s") : "");
   if (opts.state === "paused")
     return "Omadoku paused · " + formatTime(opts.elapsedMs);
-  return opts.difficulty + " · " + opts.filled + "/81 · " + formatTime(opts.elapsedMs);
+  return tag + opts.difficulty + " · " + opts.filled + "/81 · " + formatTime(opts.elapsedMs);
 }
 
 // Status line under the title in the panel header.
@@ -58,6 +59,44 @@ function statusText(opts) {
   var left = 81 - opts.filled;
   if (left === 0) return "CHECK YOUR WORK";
   return left + " TO GO";
+}
+
+// ------------------------------------------------------------- day keys
+//
+// The daily puzzle is addressed by calendar date, "YYYY-MM-DD". Local date
+// rather than UTC on purpose: the board should turn over at the player's
+// midnight, not at Greenwich's. The grid for a given date is still byte for
+// byte the same everywhere - only the moment it becomes "today" differs.
+
+function _pad2(n) { return n < 10 ? "0" + n : String(n); }
+
+function dayKey(date) {
+  var d = date || new Date();
+  return d.getFullYear() + "-" + _pad2(d.getMonth() + 1) + "-" + _pad2(d.getDate());
+}
+
+function isDayKey(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+// Arithmetic in UTC so a daylight-saving jump cannot turn "yesterday" into the
+// same day or skip one; the key itself carries no time, so there is nothing to
+// shift.
+function previousDay(key) {
+  if (!isDayKey(key)) return "";
+  var p = key.split("-");
+  var d = new Date(Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2])) - 86400000);
+  return d.getUTCFullYear() + "-" + _pad2(d.getUTCMonth() + 1) + "-" + _pad2(d.getUTCDate());
+}
+
+var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// "3 Sep" - short enough for a button, unambiguous about the day.
+function formatDayKey(key) {
+  if (!isDayKey(key)) return "";
+  var p = key.split("-");
+  return String(Number(p[2])) + " " + MONTHS[Number(p[1]) - 1];
 }
 
 function isDifficulty(name) {
@@ -107,7 +146,11 @@ function serialize(state) {
     hintsUsed: Math.max(0, state.hintsUsed | 0),
     selected: Math.min(80, Math.max(0, state.selected | 0)),
     notesMode: state.notesMode === true,
-    solved: state.solved === true
+    solved: state.solved === true,
+    // Optional, and deliberately not a version bump: an older build reading
+    // this ignores the field and still restores a playable board, while a
+    // bump would throw away every in-progress game on upgrade to buy nothing.
+    daily: isDayKey(state.daily) ? state.daily : ""
   }, null, 2) + "\n";
 }
 
@@ -141,7 +184,10 @@ function parse(text) {
     hintsUsed: Math.max(0, raw.hintsUsed | 0),
     selected: Math.min(80, Math.max(0, raw.selected | 0)),
     notesMode: raw.notesMode === true,
-    solved: raw.solved === true
+    solved: raw.solved === true,
+    // Absent in saves written before the daily existed; "" means an ordinary
+    // board, which is exactly what those saves are.
+    daily: isDayKey(raw.daily) ? raw.daily : ""
   };
 }
 
@@ -176,6 +222,13 @@ function emptyStats() {
     timeMs: 0,
     streak: 0,
     bestStreak: 0,
+    // The daily ledger. Separate from `streak` because it counts consecutive
+    // *days* rather than consecutive wins - solving five boards this afternoon
+    // is a streak of five and a daily streak of one.
+    dailySolved: 0,
+    dailyStreak: 0,
+    bestDailyStreak: 0,
+    lastDaily: "",
     byDifficulty: byDifficulty
   };
 }
@@ -192,6 +245,13 @@ function _cloneStats(stats) {
   out.timeMs = _int(source.timeMs);
   out.streak = _int(source.streak);
   out.bestStreak = _int(source.bestStreak);
+  // Missing in ledgers written before the daily existed. `_int` reads absent
+  // as 0 and `isDayKey` reads absent as "", so an old file migrates itself and
+  // STATS_VERSION stays where it is rather than resetting everyone's record.
+  out.dailySolved = _int(source.dailySolved);
+  out.dailyStreak = _int(source.dailyStreak);
+  out.bestDailyStreak = _int(source.bestDailyStreak);
+  out.lastDaily = isDayKey(source.lastDaily) ? source.lastDaily : "";
   var by = source.byDifficulty || {};
   for (var i = 0; i < LEVELS.length; i++) {
     var name = LEVELS[i];
@@ -259,6 +319,28 @@ function recordSolve(stats, difficulty, elapsedMs, hintsUsed) {
   return next;
 }
 
+// A daily was finished. The solve itself was already counted by recordSolve -
+// a daily is an ordinary board that happens to be shared - so this only moves
+// the day ledger.
+function recordDailySolve(stats, key) {
+  var next = _cloneStats(stats);
+  if (!isDayKey(key)) return next;
+  // Already banked. Re-solving the same day's board - after undoing back past
+  // the finish, or on a second machine - must not inflate the streak.
+  if (next.lastDaily === key) return next;
+
+  next.dailySolved++;
+  // Finishing a board older than the one already banked counts as a solve but
+  // leaves the streak alone: the run only ever moves forward. Keys are ISO, so
+  // lexicographic order is chronological order.
+  if (next.lastDaily > key) return next;
+
+  next.dailyStreak = next.lastDaily === previousDay(key) ? next.dailyStreak + 1 : 1;
+  if (next.dailyStreak > next.bestDailyStreak) next.bestDailyStreak = next.dailyStreak;
+  next.lastDaily = key;
+  return next;
+}
+
 function recordAbandon(stats) {
   var next = _cloneStats(stats);
   next.streak = 0;
@@ -266,6 +348,22 @@ function recordAbandon(stats) {
 }
 
 // ------------------------------------------------------- stats presentation
+
+// Today's daily is done. Drives the button label, so it has to be asked about
+// a specific day rather than read off the ledger.
+function dailyDone(stats, today) {
+  return isDayKey(today) && _cloneStats(stats).lastDaily === today;
+}
+
+// The stored streak only moves on a solve, so a run that lapsed a week ago
+// still reads high until the next one lands. Display asks this instead: a
+// streak is alive only if its last day was today or yesterday.
+function dailyStreakNow(stats, today) {
+  var s = _cloneStats(stats);
+  if (!isDayKey(today) || !isDayKey(s.lastDaily)) return 0;
+  if (s.lastDaily === today || s.lastDaily === previousDay(today)) return s.dailyStreak;
+  return 0;
+}
 
 function winRate(stats) {
   var s = _cloneStats(stats);
