@@ -144,6 +144,46 @@ function solve(grid) {
   return _firstSolution(grid.slice(), m.rm, m.cm, m.bm, { n: 400000 });
 }
 
+// ---------------------------------------------------------------- seeding
+//
+// A seeded generator, so a board can be reproduced from nothing but a seed.
+// That is the whole trick behind the daily puzzle: every machine derives the
+// same grid from the same date, with no server to hand one out and no network
+// call to make. `Math.random` is fine for a board you deal yourself, but it can
+// never be part of a daily.
+//
+// Consequence worth stating plainly: `generateSolution` and `generate` are now
+// a compatibility surface. Change the order in which either of them consumes
+// random numbers and every past daily changes with it.
+
+// mulberry32 - small, fast, and good enough for shuffling a sudoku.
+function rngFrom(seed) {
+  var a = (seed >>> 0) || 1;
+  return function () {
+    a = (a + 0x6D2B79F5) >>> 0;
+    var t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// FNV-1a, turning "2026-09-03|Hard" into a seed for the above.
+function seedFrom(text) {
+  var s = String(text);
+  var h = 0x811C9DC5;
+  for (var i = 0; i < s.length; i++) {
+    h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+// Each difficulty gets its own daily board, so everyone playing at a given
+// level shares a grid rather than only the people who all chose Medium.
+function dailySeed(dayKey, difficulty) {
+  return seedFrom(String(dayKey) + "|" + String(difficulty));
+}
+
 // -------------------------------------------------------------- generation
 
 function _shuffle(list, rng) {
@@ -209,6 +249,8 @@ function givensFor(difficulty) {
 // which can land above the target when uniqueness blocks further removal.
 function generate(difficulty, rng) {
   var random = rng || Math.random;
+  // Everything below this line consumes `random` in a fixed order. See the
+  // seeding note above before reordering any of it.
   var solution = generateSolution(random);
   var target = givensFor(difficulty);
   var puzzle = solution.slice();

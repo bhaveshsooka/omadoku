@@ -28,6 +28,7 @@ BarWidget {
   readonly property bool opened: panel ? panel.opened === true : false
   readonly property bool started: panel ? panel.started === true : false
   readonly property bool solved: panel ? panel.solved === true : false
+  readonly property bool isDaily: panel ? panel.isDaily === true : false
   readonly property bool paused: panel ? panel.paused === true : false
   readonly property string gameState: panel ? panel.gameState : "idle"
   readonly property real elapsedMs: panel ? panel.elapsedMs : 0
@@ -77,6 +78,19 @@ BarWidget {
     }
     panel.newGame(difficulty)
     return panel.difficulty
+  }
+
+  // Today's shared board. Same confirmation rules as dealing any other game,
+  // because it replaces whatever is on the table just as hard.
+  function requestDaily(difficulty) {
+    if (!panel) return "unavailable"
+    if (panel.needsConfirm) {
+      panel.requestDaily(difficulty)
+      panel.open()
+      return "confirm"
+    }
+    panel.newDaily(difficulty)
+    return panel.dailyKey
   }
 
   function requestAbandon() {
@@ -136,6 +150,10 @@ BarWidget {
     // keybinding with a typo still deals a playable game. (`new` is a reserved
     // word, so the method cannot simply be called that.)
     function newGame(difficulty: string): string { return root.requestNewGame(difficulty) }
+    // `omarchy-shell io.github.bhaveshsooka.omadoku daily`. Returns the day it
+    // dealt, so a keybinding can be scripted against it. No difficulty given
+    // falls back to the configured one - the daily is a one-press action.
+    function daily(difficulty: string): string { return root.requestDaily(difficulty) }
     // Clearing keeps the puzzle and is undoable, so it needs no confirmation.
     function clear(): string {
       if (!root.panel) return "unavailable"
@@ -149,6 +167,8 @@ BarWidget {
       var s = root.panel.stats
       return s.solved + "/" + s.started + " solved, " + Model.winRate(s)
         + "% win rate, streak " + s.streak + " (best " + s.bestStreak + ")"
+        + ", daily streak " + Model.dailyStreakNow(s, root.panel.today)
+        + " (best " + s.bestDailyStreak + ")"
     }
     // Puts a finished board away. Nothing is lost, so unlike abandon it needs
     // no confirmation and costs no streak.
@@ -185,7 +205,8 @@ BarWidget {
         difficulty: root.difficulty,
         elapsedMs: root.elapsedMs,
         filled: root.filled,
-        hintsUsed: root.hintsUsed
+        hintsUsed: root.hintsUsed,
+        daily: root.isDaily
       })
     }
   }
@@ -220,7 +241,8 @@ BarWidget {
       difficulty: root.difficulty,
       elapsedMs: root.elapsedMs,
       filled: root.filled,
-      hintsUsed: root.hintsUsed
+      hintsUsed: root.hintsUsed,
+      daily: root.isDaily
     })
 
     onPressed: function(pressedButton) {

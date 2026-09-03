@@ -86,6 +86,35 @@ board you are on.
 Opening the panel always returns you to the game in progress, and never deals a
 new one. It lands on the Board tab even if you left it showing Stats.
 
+## The daily puzzle
+
+**Today's daily** on the start screen — or `d` from anywhere — deals the board
+for today's date. Everyone running Omadoku gets the same grid on the same day,
+at the same difficulty.
+
+There is no server involved and no network call. The board is derived from the
+date itself, so every copy of Omadoku computes an identical grid from the same
+seed. Nothing is fetched, and nothing is reported back.
+
+Each difficulty has its own daily, so choosing Expert does not mean playing
+alone — it means sharing today's board with everyone else who chose Expert.
+Unlike **Start**, the daily needs no difficulty armed first; with the picker
+untouched it uses your configured `difficulty` setting.
+
+A daily is an ordinary board in every other respect. It saves, pauses, takes
+hints, and counts toward your normal stats.
+
+The date is your local one, so the board turns over at your midnight rather than
+at Greenwich's. Two people in different timezones get the same grid for a given
+calendar date; they just reach it at different moments.
+
+**Daily streak** counts consecutive days on which you finished a daily, which is
+not the same as the ordinary streak — solving five boards this afternoon is a
+streak of five and a daily streak of one. Miss a day and it starts again. The
+streak is banked once per day: re-solving today's board, or playing it on a
+second machine, cannot inflate it, and finishing an older board than the one
+already banked counts as a solve without moving the run.
+
 ## Playing
 
 **Mouse** — left click the bar icon opens the board, right click pauses, middle
@@ -109,6 +138,7 @@ click to clear it.
 | `p`                                  | Pause the clock                                        |
 | `c`                                  | Clear your entries, keep the puzzle                    |
 | `g`                                  | New game at the armed difficulty                       |
+| `d`                                  | Today's daily puzzle                                   |
 | `s` / `b`                            | Switch to the Stats / Board tab                        |
 | `Esc`                                | Back out of a prompt, then the Stats tab, then close   |
 
@@ -189,9 +219,13 @@ The **Stats** tab (`s`) keeps a lifetime record in
 - solves, best time, and average time per difficulty
 - games played, solves without hints, best streak, hints used, and total time on
   solved games
+- daily streak, best daily streak, and dailies solved
 
 A streak is consecutive solves; abandoning a board, or dealing a new one over a
-board you had not finished, resets it to zero. A solve counts once per board
+board you had not finished, resets it to zero. The **daily streak** is a
+different count — consecutive days with a daily finished, described above — and
+is shown as zero once the run has lapsed, not left reading high until the next
+daily lands. A solve counts once per board
 dealt: a finished board cannot be un-finished, since undo and clear are both
 disabled on it, so there is no way to score the same deal twice.
 
@@ -230,6 +264,7 @@ keybinding, a script — can drive it:
 ```bash
 omarchy-shell io.github.bhaveshsooka.omadoku toggle
 omarchy-shell io.github.bhaveshsooka.omadoku newGame Hard
+omarchy-shell io.github.bhaveshsooka.omadoku daily
 omarchy-shell io.github.bhaveshsooka.omadoku pause
 omarchy-shell io.github.bhaveshsooka.omadoku hint
 omarchy-shell io.github.bhaveshsooka.omadoku clear
@@ -256,6 +291,11 @@ the button; it answers `not solved` on a game still in progress.
 `resetStats` never wipes anything on its own: it returns `confirm` and opens the
 panel onto the question, so an irreversible action always takes a second,
 deliberate press somewhere you can read what it does.
+
+`daily` deals today's board and returns the date it dealt, so a keybinding can
+be scripted against it. It takes an optional difficulty and falls back to the
+configured one, and it respects the confirmation exactly as `newGame` does — a
+daily replaces whatever is on the table just as hard as any other deal.
 
 `newGame` takes `Easy`, `Medium`, `Hard`, or `Expert`; an unrecognised name
 falls back to the configured difficulty rather than failing, so a keybinding
