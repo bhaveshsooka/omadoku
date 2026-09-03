@@ -36,10 +36,16 @@ BarWidget {
   readonly property int hintsUsed: panel ? panel.hintsUsed : 0
   readonly property bool showTimer: setting("showTimer", true) === true
   readonly property bool canStart: panel ? panel.canStart === true : false
-  // A 58px wordmark cannot fit a 28px vertical bar, so that orientation keeps
-  // the compact grid glyph. Also lets anyone opt back into the plain icon.
-  readonly property string barStyle: setting("barStyle", "Wordmark")
-  readonly property bool wordmark: !vertical && barStyle !== "Icon"
+  // Mark is the default: the wordmark is 73px of bar for a game, which is more
+  // than it is worth beside a clock. Wordmark keeps the old look for anyone who
+  // wants it, Icon falls back to the Nerd Font glyph.
+  readonly property string barStyle: setting("barStyle", "Mark")
+  // A 58px wordmark cannot fit a 28px vertical bar, so that orientation gets
+  // the mark instead - it is square, so it fits either way, and it reads far
+  // better than the glyph it used to fall back to.
+  readonly property string effectiveStyle: barStyle === "Wordmark" && vertical ? "Mark" : barStyle
+  readonly property bool wordmark: effectiveStyle === "Wordmark"
+  readonly property bool drawn: effectiveStyle !== "Icon"
 
   // Popout switching is the bar's one-popup-at-a-time coordination; forward it
   // so opening another widget's popup closes the board cleanly.
@@ -195,12 +201,13 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
 
-    // Vertical bars fall back to WidgetButton's own label, carrying the glyph.
-    labelVisible: !root.wordmark
-    text: root.wordmark ? "" : Model.glyph(root.gameState)
+    // Only the Icon style falls back to WidgetButton's own label and glyph;
+    // both drawn styles carry their own art in the Row below.
+    labelVisible: !root.drawn
+    text: root.drawn ? "" : Model.glyph(root.gameState)
     hasVisualContent: true
     fontSize: Style.bar.iconFont
-    fixedWidth: root.wordmark ? Math.round(content.implicitWidth + Style.spaceReal(9)) : (root.vertical ? -1 : Style.bar.iconSlot)
+    fixedWidth: root.drawn ? Math.round(content.implicitWidth + Style.spaceReal(9)) : (root.vertical ? -1 : Style.bar.iconSlot)
     fixedHeight: root.vertical ? Style.bar.iconSlot : -1
 
     // A finished board is worth a colour change; a game in progress is not,
@@ -233,11 +240,14 @@ BarWidget {
 
     Row {
       id: content
-      visible: root.wordmark
+      visible: root.drawn
       anchors.centerIn: parent
       spacing: Style.spaceReal(6)
 
+      // Both marks take the same three inputs, so which one is on screen is
+      // the only difference between the two styles.
       Icon {
+        visible: root.wordmark
         anchors.verticalCenter: parent.verticalCenter
         barSize: root.barSize
         solved: root.solved
@@ -247,9 +257,18 @@ BarWidget {
         foreground: button.active && button.useActiveColor ? button.activeColor : button.foreground
       }
 
+      Mark {
+        visible: !root.wordmark
+        anchors.verticalCenter: parent.verticalCenter
+        barSize: root.barSize
+        solved: root.solved
+        foreground: button.active && button.useActiveColor ? button.activeColor : button.foreground
+      }
+
       Text {
         anchors.verticalCenter: parent.verticalCenter
-        visible: root.showTimer && root.started
+        // The mark fits a vertical bar, the timer beside it does not.
+        visible: root.showTimer && root.started && !root.vertical
         textFormat: Text.PlainText
         text: Model.formatTime(root.elapsedMs)
         color: button.active && button.useActiveColor ? button.activeColor : button.foreground
