@@ -32,27 +32,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install qmllint
+      - name: Install Qt's QML tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qt6-declarative-dev-tools
           echo /usr/lib/qt6/bin >> "$GITHUB_PATH"
 
       - name: Check every QML file parses
-        run: |
-          # Two adjustments, both about the checker rather than the code:
-          #
-          # qmllint's parser rejects `function name(): void`, which the QML
-          # engine accepts and which Quickshell's own IpcHandler documentation
-          # uses. Normalising it away is better than dropping BarWidget.qml
-          # from the check, which is where the IPC surface lives.
-          #
-          # Omarchy's qs.Commons and qs.Ui are not installable here, so their
-          # imports cannot resolve. Unresolved imports are warnings and do not
-          # change the exit code; a file that does not parse is an error and
-          # does, which is exactly the thing worth failing a build over.
-          mkdir -p .lint
-          for f in *.qml; do
-            sed 's/(): void/()/g' "$f" > ".lint/$f"
-          done
-          QT_FORCE_STDERR_LOGGING=1 qmllint .lint/*.qml
+        run: test/qml.sh
