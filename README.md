@@ -214,7 +214,7 @@ and are editable through Setup > Plugins.
 | -------------------- | ---------- | ------------------------------------------------------------------------------------- |
 | `difficulty`         | `Medium`   | Difficulty for new games                                                              |
 | `showTimer`          | `true`     | Show elapsed time beside the bar icon                                                 |
-| `barStyle`           | `Wordmark` | `Wordmark` draws OMADOKU as a row of sudoku cells; `Icon` uses the compact grid glyph |
+| `barStyle`           | `Mark`     | `Mark` draws a compact 3×3 sudoku grid; `Wordmark` draws OMADOKU as a row of sudoku cells, about three times as wide; `Icon` uses the Nerd Font grid glyph |
 | `cellSize`           | `34`       | Board cell size in pixels (22–56)                                                     |
 | `highlightPeers`     | `true`     | Shade the selected cell's row, column and box                                         |
 | `highlightSameDigit` | `true`     | Shade cells holding the same digit                                                    |

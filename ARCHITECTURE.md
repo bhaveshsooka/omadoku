@@ -9,6 +9,7 @@ Design notes for anyone reading the source. For installing and playing, see
 | `BarWidget.qml` | The bar icon, the IPC target, and the panel loader            |
 | `Panel.qml`     | The board, game state, keyboard handling, and the save file   |
 | `Sudoku.js`     | Puzzle generation, solving, and validation — pure functions   |
+| `Mark.qml`      | The compact bar mark, a 3x3 grid - the default bar art        |
 | `Icon.qml`      | The bar wordmark, drawn rather than set in a font             |
 | `Model.js`      | Glyphs, labels, time formatting, save and stats serialisation |
 
@@ -51,6 +52,23 @@ board's destructive actions use, so there is one prompt mechanism rather than
 two — which is why the confirmation's text moved out of delegate ternaries and
 into `confirmPrompt()` / `confirmDetail()` / `confirmVerb()` once there were
 three cases instead of two.
+
+**The bar mark** is the default because the wordmark is 73px of bar before the
+timer, against 27px for the Nerd Font fallback - nearly three times the width,
+for a game sitting next to a clock. The mark says the same thing in 16px.
+
+It is a 3x3 grid with four cells written in as dots rather than filled. Filled
+cells at this size read as a checkerboard rather than a sudoku board, and they
+leave no empty ground for the solved fill to show against, so the mark would
+carry a state it could not display. Its box is sized as `3 * cell + 4` rather
+than taken from the wordmark's `cellHeight`: 18px does not divide into three
+cells plus two hairlines, and the resulting 4/5/4 cells give visibly uneven dots
+at the one scale where evenness is all the mark has.
+
+Being square it also fits a vertical bar, which the wordmark never could - so
+that orientation now draws the mark instead of falling back to the Nerd Font
+glyph, which renders about 11px and turns to mush. The wordmark survives as an
+opt-in, since it is the more distinctive of the two and some bars have room.
 
 **The bar wordmark** is drawn in QML because no icon font carries it, and
 because the obvious alternative does not survive a 26px bar: a 3×3 grid of nine

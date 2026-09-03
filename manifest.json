@@ -27,7 +27,7 @@
       "markConflicts": true,
       "autoCleanNotes": true,
       "pauseWhenClosed": false,
-      "barStyle": "Wordmark"
+      "barStyle": "Mark"
     },
     "schema": [
       {
@@ -48,11 +48,12 @@
         "type": "enum",
         "label": "Bar appearance",
         "options": [
+          "Mark",
           "Wordmark",
           "Icon"
         ],
-        "defaultValue": "Wordmark",
-        "description": "Wordmark draws OMADOKU as a row of sudoku cells. Icon uses the compact grid glyph. Vertical bars always use the icon."
+        "defaultValue": "Mark",
+        "description": "Mark draws a compact 3x3 sudoku grid. Wordmark draws OMADOKU as a row of sudoku cells and is about three times as wide. Icon uses the Nerd Font grid glyph. Vertical bars never draw the wordmark and use the mark instead."
       },
       {
         "key": "showTimer",
