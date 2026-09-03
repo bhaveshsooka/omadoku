@@ -267,6 +267,12 @@ a reserved word.)
 Puzzle generation, the difficulty model, persistence, the drawn bar wordmark,
 and the attract loop are described in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the branching model, how to run the
+tests and the plugin itself from a checkout, and how a release reaches both
+`main` and the marketplace listing.
+
 ## Licence and credits
 
 MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Bhavesh Sooka.
