@@ -2,3 +2,6 @@
 *.log
 *.bak
 .DS_Store
+
+# qmllint working copies, created by CI
+.lint/
