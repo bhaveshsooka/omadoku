@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "release/**"]
+  pull_request:
+
+# The plugin has no dependencies and no build, so neither does its CI: node is
+# already on the runner, and the QML check needs nothing but qmllint.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Logic and manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sudoku.js and Model.js are `.pragma library` files with no QML in them,
+      # which is why the game logic lives there - it can be checked without a
+      # shell, a bar, or a display.
+      - name: Unit tests
+        run: node test/run.js
+
+      - name: Manifest
+        run: node test/manifest.js
+
+  qml:
+    name: QML parses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt's QML tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qt6-declarative-dev-tools
+          echo /usr/lib/qt6/bin >> "$GITHUB_PATH"
+
+      - name: Check every QML file parses
+        run: test/qml.sh
